@@ -1,4 +1,4 @@
-// Mock stock data utilities
+// Stock data utilities - Indian market (NSE)
 export interface StockQuote {
   symbol: string;
   name: string;
@@ -6,18 +6,24 @@ export interface StockQuote {
   change: number;
   changePercent: number;
   volume: string;
-  marketCap: string;
+  marketCap?: string;
   high: number;
   low: number;
   open: number;
+  close?: number;
+  exchange?: string;
 }
 
 export interface PredictionData {
   date: string;
   actual?: number;
-  arima: number;
-  lstm: number;
-  linearReg: number;
+  arima?: number;
+  lstm?: number;
+  linearReg?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
 }
 
 export interface NewsItem {
@@ -29,15 +35,18 @@ export interface NewsItem {
   summary: string;
 }
 
+// Fallback mock data for Indian stocks
 const STOCKS: StockQuote[] = [
-  { symbol: "AAPL", name: "Apple Inc.", price: 227.63, change: 3.42, changePercent: 1.53, volume: "62.3M", marketCap: "3.48T", high: 228.50, low: 223.10, open: 224.20 },
-  { symbol: "GOOGL", name: "Alphabet Inc.", price: 191.24, change: -1.87, changePercent: -0.97, volume: "28.1M", marketCap: "2.36T", high: 193.50, low: 190.10, open: 193.00 },
-  { symbol: "MSFT", name: "Microsoft Corp.", price: 432.15, change: 5.67, changePercent: 1.33, volume: "22.5M", marketCap: "3.21T", high: 433.90, low: 426.50, open: 427.00 },
-  { symbol: "AMZN", name: "Amazon.com Inc.", price: 228.93, change: 2.11, changePercent: 0.93, volume: "45.8M", marketCap: "2.41T", high: 230.00, low: 226.50, open: 227.00 },
-  { symbol: "TSLA", name: "Tesla Inc.", price: 394.94, change: -8.32, changePercent: -2.06, volume: "98.2M", marketCap: "1.27T", high: 405.00, low: 392.10, open: 403.00 },
-  { symbol: "NVDA", name: "NVIDIA Corp.", price: 131.28, change: 4.56, changePercent: 3.60, volume: "312.5M", marketCap: "3.22T", high: 132.50, low: 126.70, open: 127.00 },
-  { symbol: "META", name: "Meta Platforms", price: 719.93, change: 12.45, changePercent: 1.76, volume: "18.3M", marketCap: "1.83T", high: 722.00, low: 707.50, open: 708.00 },
-  { symbol: "NFLX", name: "Netflix Inc.", price: 1032.79, change: -15.23, changePercent: -1.45, volume: "5.6M", marketCap: "445B", high: 1050.00, low: 1028.00, open: 1048.00 },
+  { symbol: "RELIANCE", name: "Reliance Industries", price: 1285.40, change: 12.35, changePercent: 0.97, volume: "18.2M", high: 1292.00, low: 1270.50, open: 1273.00 },
+  { symbol: "TCS", name: "Tata Consultancy Services", price: 3842.15, change: -28.60, changePercent: -0.74, volume: "4.1M", high: 3875.00, low: 3830.00, open: 3870.00 },
+  { symbol: "INFY", name: "Infosys Ltd.", price: 1578.90, change: 15.45, changePercent: 0.99, volume: "12.5M", high: 1585.00, low: 1560.00, open: 1563.00 },
+  { symbol: "HDFCBANK", name: "HDFC Bank Ltd.", price: 1642.30, change: -8.20, changePercent: -0.50, volume: "8.7M", high: 1655.00, low: 1635.00, open: 1650.00 },
+  { symbol: "ICICIBANK", name: "ICICI Bank Ltd.", price: 1245.75, change: 18.90, changePercent: 1.54, volume: "14.3M", high: 1250.00, low: 1225.00, open: 1227.00 },
+  { symbol: "WIPRO", name: "Wipro Ltd.", price: 295.60, change: 3.15, changePercent: 1.08, volume: "22.8M", high: 298.00, low: 291.00, open: 292.50 },
+  { symbol: "TATAMOTORS", name: "Tata Motors Ltd.", price: 742.80, change: -15.40, changePercent: -2.03, volume: "32.1M", high: 760.00, low: 738.00, open: 758.00 },
+  { symbol: "SBIN", name: "State Bank of India", price: 812.45, change: 6.30, changePercent: 0.78, volume: "28.5M", high: 818.00, low: 805.00, open: 806.00 },
+  { symbol: "BAJFINANCE", name: "Bajaj Finance Ltd.", price: 7245.00, change: 85.50, changePercent: 1.19, volume: "3.2M", high: 7280.00, low: 7150.00, open: 7160.00 },
+  { symbol: "ITC", name: "ITC Ltd.", price: 438.20, change: -2.80, changePercent: -0.63, volume: "16.4M", high: 442.00, low: 435.00, open: 441.00 },
 ];
 
 export function getStocks(): StockQuote[] {
@@ -55,14 +64,13 @@ export function generatePredictions(symbol: string): PredictionData[] {
   const data: PredictionData[] = [];
   const today = new Date();
 
-  // Past 7 days with actual data
   for (let i = -7; i <= 0; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() + i);
     const noise = () => (Math.random() - 0.5) * base * 0.03;
     const actual = base + noise() * 2;
     data.push({
-      date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      date: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
       actual: +actual.toFixed(2),
       arima: +(actual + noise()).toFixed(2),
       lstm: +(actual + noise()).toFixed(2),
@@ -70,14 +78,13 @@ export function generatePredictions(symbol: string): PredictionData[] {
     });
   }
 
-  // Future 7 days predictions only
   for (let i = 1; i <= 7; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() + i);
     const trend = (Math.random() - 0.45) * base * 0.01 * i;
     const noise = () => (Math.random() - 0.5) * base * 0.02;
     data.push({
-      date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      date: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
       arima: +(base + trend + noise()).toFixed(2),
       lstm: +(base + trend * 1.1 + noise()).toFixed(2),
       linearReg: +(base + trend * 0.8 + noise()).toFixed(2),
@@ -87,28 +94,29 @@ export function generatePredictions(symbol: string): PredictionData[] {
   return data;
 }
 
-export function getNews(symbol?: string): NewsItem[] {
-  const allNews: NewsItem[] = [
-    { id: "1", title: "AI Spending Surge Drives Tech Rally to New Heights", source: "Reuters", time: "2h ago", sentiment: "positive", summary: "Major tech companies report increased AI infrastructure spending, boosting investor confidence." },
-    { id: "2", title: "Federal Reserve Signals Potential Rate Cut in March", source: "Bloomberg", time: "4h ago", sentiment: "positive", summary: "Fed officials hint at easing monetary policy amid cooling inflation data." },
-    { id: "3", title: "Semiconductor Shortage Concerns Resurface", source: "CNBC", time: "5h ago", sentiment: "negative", summary: "Supply chain disruptions in Asia raise concerns about chip availability for Q2." },
-    { id: "4", title: "Electric Vehicle Sales Growth Slows in Europe", source: "Financial Times", time: "6h ago", sentiment: "negative", summary: "EV adoption rates plateau in key European markets as subsidies expire." },
-    { id: "5", title: "Crypto Market Shows Signs of Institutional Adoption", source: "CoinDesk", time: "8h ago", sentiment: "neutral", summary: "Major banks announce plans to offer cryptocurrency custody services." },
-    { id: "6", title: "Cloud Computing Revenue Exceeds Expectations", source: "TechCrunch", time: "10h ago", sentiment: "positive", summary: "Enterprise cloud spending continues to grow as businesses accelerate digital transformation." },
+export function getNews(_symbol?: string): NewsItem[] {
+  return [
+    { id: "1", title: "Reliance Jio Reports Record Subscriber Additions in Q4", source: "ET Markets", time: "2h ago", sentiment: "positive", summary: "Reliance Jio added 10M+ subscribers in the quarter, driven by 5G rollout across tier-2 cities." },
+    { id: "2", title: "RBI Holds Repo Rate Steady at 6.5% Amid Inflation Concerns", source: "Mint", time: "4h ago", sentiment: "neutral", summary: "The Reserve Bank of India maintained its benchmark rate, citing need for continued vigilance on inflation." },
+    { id: "3", title: "IT Sector Faces Headwinds as Global Spending Slows", source: "Business Standard", time: "5h ago", sentiment: "negative", summary: "Indian IT companies face challenges as clients in the US and Europe reduce discretionary spending." },
+    { id: "4", title: "Tata Motors EV Sales Surge 45% Year-on-Year", source: "Economic Times", time: "6h ago", sentiment: "positive", summary: "Tata Motors continues to dominate India's EV market with strong Nexon EV and Tiago EV sales." },
+    { id: "5", title: "SEBI Introduces New Rules for F&O Trading", source: "Moneycontrol", time: "8h ago", sentiment: "neutral", summary: "Market regulator SEBI announces tighter norms for derivatives trading to protect retail investors." },
+    { id: "6", title: "Banking Sector Rally: HDFC, ICICI Hit All-Time Highs", source: "NDTV Profit", time: "10h ago", sentiment: "positive", summary: "Private banking stocks rally as asset quality improves and credit growth remains robust." },
   ];
-  return allNews;
 }
 
 export function getSentimentScore(symbol: string): { score: number; label: string; tweets: number } {
   const scores: Record<string, { score: number; label: string; tweets: number }> = {
-    AAPL: { score: 72, label: "Bullish", tweets: 14523 },
-    GOOGL: { score: 45, label: "Neutral", tweets: 8921 },
-    MSFT: { score: 68, label: "Bullish", tweets: 11203 },
-    AMZN: { score: 61, label: "Slightly Bullish", tweets: 9872 },
-    TSLA: { score: 35, label: "Bearish", tweets: 32451 },
-    NVDA: { score: 85, label: "Very Bullish", tweets: 28764 },
-    META: { score: 58, label: "Neutral", tweets: 7632 },
-    NFLX: { score: 42, label: "Neutral", tweets: 5421 },
+    RELIANCE: { score: 72, label: "Bullish", tweets: 14523 },
+    TCS: { score: 45, label: "Neutral", tweets: 8921 },
+    INFY: { score: 68, label: "Bullish", tweets: 11203 },
+    HDFCBANK: { score: 61, label: "Slightly Bullish", tweets: 9872 },
+    ICICIBANK: { score: 74, label: "Bullish", tweets: 7632 },
+    WIPRO: { score: 42, label: "Neutral", tweets: 5421 },
+    TATAMOTORS: { score: 35, label: "Bearish", tweets: 32451 },
+    SBIN: { score: 58, label: "Neutral", tweets: 12340 },
+    BAJFINANCE: { score: 85, label: "Very Bullish", tweets: 6780 },
+    ITC: { score: 52, label: "Neutral", tweets: 9100 },
   };
   return scores[symbol] || { score: 50, label: "Neutral", tweets: 0 };
 }

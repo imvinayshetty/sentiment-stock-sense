@@ -8,7 +8,7 @@ import SentimentGauge from "@/components/SentimentGauge";
 import NewsFeed from "@/components/NewsFeed";
 
 const Index = () => {
-  const [selectedSymbol, setSelectedSymbol] = useState("NVDA");
+  const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
 
   return (
     <div className="min-h-screen bg-background gradient-mesh">
