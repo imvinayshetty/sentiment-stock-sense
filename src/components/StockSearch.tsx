@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
+import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStocks, type StockQuote } from "@/lib/stockData";
 
 interface StockSearchProps {
@@ -9,7 +10,8 @@ interface StockSearchProps {
 
 const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const [query, setQuery] = useState("");
-  const stocks = getStocks();
+  const { data: liveStocks, isLoading } = useStockQuotes();
+  const stocks = liveStocks?.length ? liveStocks : getStocks();
   const filtered = stocks.filter(
     (s) =>
       s.symbol.toLowerCase().includes(query.toLowerCase()) ||
@@ -22,13 +24,18 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
-          placeholder="Search stocks (e.g., AAPL, Tesla)..."
+          placeholder="Search stocks (e.g., RELIANCE, TCS)..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full rounded-lg border border-border bg-secondary/50 py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
+        {isLoading && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground animate-pulse">
+            Fetching live data...
+          </span>
+        )}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
         {filtered.map((stock) => (
           <button
             key={stock.symbol}
@@ -41,7 +48,7 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
           >
             <div className="font-mono text-sm font-bold text-foreground">{stock.symbol}</div>
             <div className="mt-0.5 truncate text-xs text-muted-foreground">{stock.name}</div>
-            <div className="mt-1 font-mono text-sm text-foreground">${stock.price.toFixed(2)}</div>
+            <div className="mt-1 font-mono text-sm text-foreground">₹{stock.price.toFixed(2)}</div>
             <div className={`font-mono text-xs ${stock.change >= 0 ? "text-chart-up" : "text-chart-down"}`}>
               {stock.change >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
             </div>
