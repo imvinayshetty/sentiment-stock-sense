@@ -5,6 +5,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Cached JWT across warm invocations (Angel One rate-limits logins hard)
+let cachedJwt: string | null = null;
+let cachedJwtExpiry = 0;
+let cachedIP: string | null = null;
+
 // Indian stock token mapping (NSE exchange tokens)
 const STOCK_TOKENS: Record<string, { token: string; name: string }> = {
   "RELIANCE": { token: "2885", name: "Reliance Industries" },
@@ -53,13 +58,27 @@ async function generateTOTP(secret: string): Promise<string> {
 }
 
 async function getPublicIP(): Promise<string> {
+  if (cachedIP) return cachedIP;
   try {
     const r = await fetch("https://api.ipify.org?format=json");
     const j = await r.json();
-    return j.ip || "1.1.1.1";
+    cachedIP = j.ip || "1.1.1.1";
+    return cachedIP;
   } catch {
-    return "1.1.1.1";
+    cachedIP = "1.1.1.1";
+    return cachedIP;
   }
+}
+
+async function getJwt(publicIP: string, forceRefresh = false): Promise<string> {
+  const now = Date.now();
+  if (!forceRefresh && cachedJwt && now < cachedJwtExpiry) {
+    return cachedJwt;
+  }
+  cachedJwt = await loginAngelOne(publicIP);
+  // Angel One JWTs last ~24h; refresh every 6h to be safe
+  cachedJwtExpiry = now + 6 * 60 * 60 * 1000;
+  return cachedJwt;
 }
 
 async function loginAngelOne(publicIP: string): Promise<string> {
@@ -179,11 +198,15 @@ serve(async (req) => {
     const symbol = url.searchParams.get("symbol");
 
     const publicIP = await getPublicIP();
-    const jwtToken = await loginAngelOne(publicIP);
+    let jwtToken = await getJwt(publicIP);
 
     if (action === "quotes") {
       const tokens = Object.values(STOCK_TOKENS).map(s => s.token);
-      const quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
+      let quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
+      if (quotes?.errorcode === "AB1010" || quotes?.message?.toLowerCase?.().includes("invalid token")) {
+        jwtToken = await getJwt(publicIP, true);
+        quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
+      }
       
       // Map tokens back to symbols
       const tokenToSymbol: Record<string, string> = {};
