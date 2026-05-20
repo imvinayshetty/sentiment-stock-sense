@@ -52,7 +52,17 @@ async function generateTOTP(secret: string): Promise<string> {
   return String(code % 1000000).padStart(6, "0");
 }
 
-async function loginAngelOne(): Promise<string> {
+async function getPublicIP(): Promise<string> {
+  try {
+    const r = await fetch("https://api.ipify.org?format=json");
+    const j = await r.json();
+    return j.ip || "1.1.1.1";
+  } catch {
+    return "1.1.1.1";
+  }
+}
+
+async function loginAngelOne(publicIP: string): Promise<string> {
   const apiKey = Deno.env.get("ANGEL_ONE_API_KEY")!;
   const clientId = Deno.env.get("ANGEL_ONE_CLIENT_ID")!;
   const password = Deno.env.get("ANGEL_ONE_PASSWORD")!;
@@ -67,9 +77,10 @@ async function loginAngelOne(): Promise<string> {
       "Accept": "application/json",
       "X-UserType": "USER",
       "X-SourceID": "WEB",
-      "X-ClientLocalIP": "127.0.0.1",
-      "X-ClientPublicIP": "127.0.0.1",
-      "X-MACAddress": "00:00:00:00:00:00",
+      "X-ClientLocalIP": "192.168.1.1",
+      "X-ClientPublicIP": publicIP,
+      "X-MACAddress": "aa:bb:cc:dd:ee:ff",
+      "User-Agent": "Mozilla/5.0",
       "X-PrivateKey": apiKey,
     },
     body: JSON.stringify({
@@ -79,14 +90,20 @@ async function loginAngelOne(): Promise<string> {
     }),
   });
 
-  const data = await res.json();
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Login failed (non-JSON, status ${res.status}): ${text.slice(0, 200)}`);
+  }
   if (!data.data?.jwtToken) {
     throw new Error(`Login failed: ${data.message || JSON.stringify(data)}`);
   }
   return data.data.jwtToken;
 }
 
-async function getMarketQuotes(jwtToken: string, tokens: string[]): Promise<any> {
+async function getMarketQuotes(jwtToken: string, tokens: string[], publicIP: string): Promise<any> {
   const apiKey = Deno.env.get("ANGEL_ONE_API_KEY")!;
 
   const res = await fetch("https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/", {
@@ -96,9 +113,10 @@ async function getMarketQuotes(jwtToken: string, tokens: string[]): Promise<any>
       "Accept": "application/json",
       "X-UserType": "USER",
       "X-SourceID": "WEB",
-      "X-ClientLocalIP": "127.0.0.1",
-      "X-ClientPublicIP": "127.0.0.1",
-      "X-MACAddress": "00:00:00:00:00:00",
+      "X-ClientLocalIP": "192.168.1.1",
+      "X-ClientPublicIP": publicIP,
+      "X-MACAddress": "aa:bb:cc:dd:ee:ff",
+      "User-Agent": "Mozilla/5.0",
       "X-PrivateKey": apiKey,
       "Authorization": `Bearer ${jwtToken}`,
     },
@@ -110,10 +128,11 @@ async function getMarketQuotes(jwtToken: string, tokens: string[]): Promise<any>
     }),
   });
 
-  return await res.json();
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { throw new Error(`Quotes failed (status ${res.status}): ${text.slice(0,200)}`); }
 }
 
-async function getHistoricalData(jwtToken: string, symbolToken: string, interval: string): Promise<any> {
+async function getHistoricalData(jwtToken: string, symbolToken: string, interval: string, publicIP: string): Promise<any> {
   const apiKey = Deno.env.get("ANGEL_ONE_API_KEY")!;
   
   const toDate = new Date();
@@ -129,9 +148,10 @@ async function getHistoricalData(jwtToken: string, symbolToken: string, interval
       "Accept": "application/json",
       "X-UserType": "USER",
       "X-SourceID": "WEB",
-      "X-ClientLocalIP": "127.0.0.1",
-      "X-ClientPublicIP": "127.0.0.1",
-      "X-MACAddress": "00:00:00:00:00:00",
+      "X-ClientLocalIP": "192.168.1.1",
+      "X-ClientPublicIP": publicIP,
+      "X-MACAddress": "aa:bb:cc:dd:ee:ff",
+      "User-Agent": "Mozilla/5.0",
       "X-PrivateKey": apiKey,
       "Authorization": `Bearer ${jwtToken}`,
     },
@@ -144,7 +164,8 @@ async function getHistoricalData(jwtToken: string, symbolToken: string, interval
     }),
   });
 
-  return await res.json();
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { throw new Error(`Historical failed (status ${res.status}): ${text.slice(0,200)}`); }
 }
 
 serve(async (req) => {
@@ -157,11 +178,12 @@ serve(async (req) => {
     const action = url.searchParams.get("action") || "quotes";
     const symbol = url.searchParams.get("symbol");
 
-    const jwtToken = await loginAngelOne();
+    const publicIP = await getPublicIP();
+    const jwtToken = await loginAngelOne(publicIP);
 
     if (action === "quotes") {
       const tokens = Object.values(STOCK_TOKENS).map(s => s.token);
-      const quotes = await getMarketQuotes(jwtToken, tokens);
+      const quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
       
       // Map tokens back to symbols
       const tokenToSymbol: Record<string, string> = {};
@@ -197,7 +219,7 @@ serve(async (req) => {
         });
       }
       const interval = url.searchParams.get("interval") || "ONE_DAY";
-      const historical = await getHistoricalData(jwtToken, stockInfo.token, interval);
+      const historical = await getHistoricalData(jwtToken, stockInfo.token, interval, publicIP);
       
       return new Response(JSON.stringify({ success: true, data: historical.data || [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
