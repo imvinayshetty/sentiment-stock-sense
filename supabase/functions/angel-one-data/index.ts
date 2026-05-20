@@ -9,6 +9,25 @@ const corsHeaders = {
 let cachedJwt: string | null = null;
 let cachedJwtExpiry = 0;
 let cachedIP: string | null = null;
+// Cache of last-close fallback quotes (when market closed or quote API unavailable)
+let cachedFallbackQuotes: any[] | null = null;
+let cachedFallbackAt = 0;
+
+// NSE market status: Mon–Fri, 09:15–15:30 IST (holidays not handled — closest approximation)
+function getMarketStatus(): { status: "OPEN" | "CLOSED"; istTime: string } {
+  const now = new Date();
+  // Convert to IST (UTC+5:30)
+  const istMs = now.getTime() + (5 * 60 + 30) * 60 * 1000;
+  const ist = new Date(istMs);
+  const day = ist.getUTCDay(); // 0 Sun .. 6 Sat
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const isWeekday = day >= 1 && day <= 5;
+  const open = isWeekday && minutes >= (9 * 60 + 15) && minutes <= (15 * 60 + 30);
+  return {
+    status: open ? "OPEN" : "CLOSED",
+    istTime: `${String(ist.getUTCHours()).padStart(2, "0")}:${String(ist.getUTCMinutes()).padStart(2, "0")} IST`,
+  };
+}
 
 // Indian stock token mapping (NSE exchange tokens)
 const STOCK_TOKENS: Record<string, { token: string; name: string }> = {
