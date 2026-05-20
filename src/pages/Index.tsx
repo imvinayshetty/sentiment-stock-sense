@@ -6,9 +6,13 @@ import StockDetail from "@/components/StockDetail";
 import PredictionChart from "@/components/PredictionChart";
 import SentimentGauge from "@/components/SentimentGauge";
 import NewsFeed from "@/components/NewsFeed";
+import { useStockQuotes } from "@/hooks/useAngelOneData";
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
+  const { data: quotes } = useStockQuotes();
+  const marketOpen = quotes?.marketStatus === "OPEN";
+  const istTime = quotes?.istTime;
 
   return (
     <div className="min-h-screen bg-background gradient-mesh">
@@ -25,9 +29,22 @@ const Index = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-              <span className="h-1.5 w-1.5 animate-pulse-glow rounded-full bg-primary" />
-              Market Open
+            <span
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                marketOpen
+                  ? "bg-primary/10 text-primary"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  marketOpen ? "animate-pulse-glow bg-primary" : "bg-muted-foreground"
+                }`}
+              />
+              {marketOpen ? "Market Open" : "Market Closed"}
+              {istTime && (
+                <span className="ml-1 font-mono opacity-70">· {istTime}</span>
+              )}
             </span>
           </div>
         </div>

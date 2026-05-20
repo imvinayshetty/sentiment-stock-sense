@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import type { StockQuote, PredictionData } from "@/lib/stockData";
 
+export type MarketStatus = "OPEN" | "CLOSED";
+export interface QuotesPayload {
+  data: StockQuote[];
+  marketStatus: MarketStatus;
+  istTime: string;
+  source: "live" | "last-close";
+}
+
 const PROJECT_URL = import.meta.env.VITE_SUPABASE_URL;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
@@ -23,12 +31,17 @@ async function callEdgeFunction(action: string, params: Record<string, string> =
 }
 
 export function useStockQuotes() {
-  return useQuery<StockQuote[]>({
+  return useQuery<QuotesPayload>({
     queryKey: ["stock-quotes"],
     queryFn: async () => {
       const result = await callEdgeFunction("quotes");
       if (!result.success) throw new Error(result.error);
-      return result.data;
+      return {
+        data: result.data ?? [],
+        marketStatus: result.marketStatus ?? "CLOSED",
+        istTime: result.istTime ?? "",
+        source: result.source ?? "live",
+      };
     },
     refetchInterval: 60000,
     staleTime: 30000,

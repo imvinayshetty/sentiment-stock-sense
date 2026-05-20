@@ -9,6 +9,25 @@ const corsHeaders = {
 let cachedJwt: string | null = null;
 let cachedJwtExpiry = 0;
 let cachedIP: string | null = null;
+// Cache of last-close fallback quotes (when market closed or quote API unavailable)
+let cachedFallbackQuotes: any[] | null = null;
+let cachedFallbackAt = 0;
+
+// NSE market status: Mon–Fri, 09:15–15:30 IST (holidays not handled — closest approximation)
+function getMarketStatus(): { status: "OPEN" | "CLOSED"; istTime: string } {
+  const now = new Date();
+  // Convert to IST (UTC+5:30)
+  const istMs = now.getTime() + (5 * 60 + 30) * 60 * 1000;
+  const ist = new Date(istMs);
+  const day = ist.getUTCDay(); // 0 Sun .. 6 Sat
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const isWeekday = day >= 1 && day <= 5;
+  const open = isWeekday && minutes >= (9 * 60 + 15) && minutes <= (15 * 60 + 30);
+  return {
+    status: open ? "OPEN" : "CLOSED",
+    istTime: `${String(ist.getUTCHours()).padStart(2, "0")}:${String(ist.getUTCMinutes()).padStart(2, "0")} IST`,
+  };
+}
 
 // Indian stock token mapping (NSE exchange tokens)
 const STOCK_TOKENS: Record<string, { token: string; name: string }> = {
@@ -207,19 +226,20 @@ serve(async (req) => {
         jwtToken = await getJwt(publicIP, true);
         quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
       }
-      
-      // Map tokens back to symbols
+
+      const market = getMarketStatus();
       const tokenToSymbol: Record<string, string> = {};
       for (const [sym, info] of Object.entries(STOCK_TOKENS)) {
         tokenToSymbol[info.token] = sym;
       }
 
-      const mapped = (quotes.data?.fetched || []).map((item: any) => ({
+      const fetched = quotes?.data?.fetched || [];
+      let mapped = fetched.map((item: any) => ({
         symbol: tokenToSymbol[item.symbolToken] || item.tradingSymbol,
         name: STOCK_TOKENS[tokenToSymbol[item.symbolToken]]?.name || item.tradingSymbol,
         price: item.ltp,
-        change: item.netChange || (item.ltp - item.close),
-        changePercent: item.percentChange || ((item.ltp - item.close) / item.close * 100),
+        change: item.netChange ?? (item.ltp - item.close),
+        changePercent: item.percentChange ?? ((item.ltp - item.close) / item.close * 100),
         volume: item.tradeVolume ? `${(item.tradeVolume / 1e6).toFixed(1)}M` : "N/A",
         high: item.high,
         low: item.low,
@@ -228,7 +248,59 @@ serve(async (req) => {
         exchange: "NSE",
       }));
 
-      return new Response(JSON.stringify({ success: true, data: mapped }), {
+      let source: "live" | "last-close" = "live";
+
+      // Fallback: market quote endpoint failed or returned nothing → fetch last daily candle per symbol
+      if (mapped.length === 0) {
+        source = "last-close";
+        const now = Date.now();
+        if (cachedFallbackQuotes && now - cachedFallbackAt < 5 * 60 * 1000) {
+          mapped = cachedFallbackQuotes;
+        } else {
+          const results: any[] = [];
+          for (const [sym, info] of Object.entries(STOCK_TOKENS)) {
+            try {
+              const h = await getHistoricalData(jwtToken, info.token, "ONE_DAY", publicIP);
+              const candles: any[] = h?.data || [];
+              if (candles.length >= 1) {
+                const last = candles[candles.length - 1];
+                const prev = candles.length >= 2 ? candles[candles.length - 2] : last;
+                const [_, openP, highP, lowP, closeP, vol] = last;
+                const prevClose = prev[4];
+                results.push({
+                  symbol: sym,
+                  name: info.name,
+                  price: closeP,
+                  change: closeP - prevClose,
+                  changePercent: ((closeP - prevClose) / prevClose) * 100,
+                  volume: vol ? `${(vol / 1e6).toFixed(1)}M` : "N/A",
+                  high: highP,
+                  low: lowP,
+                  open: openP,
+                  close: prevClose,
+                  exchange: "NSE",
+                });
+              }
+            } catch (e) {
+              console.error(`Historical fallback failed for ${sym}:`, e);
+            }
+            await new Promise((r) => setTimeout(r, 350)); // respect rate limits
+          }
+          if (results.length) {
+            cachedFallbackQuotes = results;
+            cachedFallbackAt = now;
+          }
+          mapped = results;
+        }
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        data: mapped,
+        marketStatus: market.status,
+        istTime: market.istTime,
+        source,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -243,7 +315,9 @@ serve(async (req) => {
       }
       const interval = url.searchParams.get("interval") || "ONE_DAY";
       const historical = await getHistoricalData(jwtToken, stockInfo.token, interval, publicIP);
-      
+      if (historical?.errorCode || historical?.errorcode) {
+        console.error("Angel One historical error:", historical);
+      }
       return new Response(JSON.stringify({ success: true, data: historical.data || [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

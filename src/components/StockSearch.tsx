@@ -10,8 +10,9 @@ interface StockSearchProps {
 
 const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const [query, setQuery] = useState("");
-  const { data: liveStocks, isLoading } = useStockQuotes();
-  const stocks = liveStocks?.length ? liveStocks : getStocks();
+  const { data: quotes, isLoading } = useStockQuotes();
+  const liveStocks = quotes?.data ?? [];
+  const stocks = liveStocks.length ? liveStocks : getStocks();
   const filtered = stocks.filter(
     (s) =>
       s.symbol.toLowerCase().includes(query.toLowerCase()) ||
