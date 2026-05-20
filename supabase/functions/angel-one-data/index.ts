@@ -315,7 +315,7 @@ serve(async (req) => {
       }
       const interval = url.searchParams.get("interval") || "ONE_DAY";
       const historical = await getHistoricalData(jwtToken, stockInfo.token, interval, publicIP);
-      
+      console.log("Historical raw:", JSON.stringify(historical).slice(0, 1000));
       return new Response(JSON.stringify({ success: true, data: historical.data || [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
