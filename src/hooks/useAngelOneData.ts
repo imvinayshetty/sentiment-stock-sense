@@ -43,8 +43,8 @@ export function useStockQuotes() {
         source: result.source ?? "live",
       };
     },
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 120000,
+    staleTime: 90000,
     retry: 1,
   });
 }
@@ -68,6 +68,7 @@ export function useHistoricalData(symbol: string) {
     },
     enabled: !!symbol,
     staleTime: 60000,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 }
