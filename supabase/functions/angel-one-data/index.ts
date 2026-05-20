@@ -226,9 +226,84 @@ serve(async (req) => {
         jwtToken = await getJwt(publicIP, true);
         quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
       }
-      console.log("Angel One quotes raw response:", JSON.stringify(quotes).slice(0, 2000));
-      
-      // Map tokens back to symbols
+
+      const market = getMarketStatus();
+      const tokenToSymbol: Record<string, string> = {};
+      for (const [sym, info] of Object.entries(STOCK_TOKENS)) {
+        tokenToSymbol[info.token] = sym;
+      }
+
+      const fetched = quotes?.data?.fetched || [];
+      let mapped = fetched.map((item: any) => ({
+        symbol: tokenToSymbol[item.symbolToken] || item.tradingSymbol,
+        name: STOCK_TOKENS[tokenToSymbol[item.symbolToken]]?.name || item.tradingSymbol,
+        price: item.ltp,
+        change: item.netChange ?? (item.ltp - item.close),
+        changePercent: item.percentChange ?? ((item.ltp - item.close) / item.close * 100),
+        volume: item.tradeVolume ? `${(item.tradeVolume / 1e6).toFixed(1)}M` : "N/A",
+        high: item.high,
+        low: item.low,
+        open: item.open,
+        close: item.close,
+        exchange: "NSE",
+      }));
+
+      let source: "live" | "last-close" = "live";
+
+      // Fallback: market quote endpoint failed or returned nothing → fetch last daily candle per symbol
+      if (mapped.length === 0) {
+        source = "last-close";
+        const now = Date.now();
+        if (cachedFallbackQuotes && now - cachedFallbackAt < 5 * 60 * 1000) {
+          mapped = cachedFallbackQuotes;
+        } else {
+          const results: any[] = [];
+          for (const [sym, info] of Object.entries(STOCK_TOKENS)) {
+            try {
+              const h = await getHistoricalData(jwtToken, info.token, "ONE_DAY", publicIP);
+              const candles: any[] = h?.data || [];
+              if (candles.length >= 1) {
+                const last = candles[candles.length - 1];
+                const prev = candles.length >= 2 ? candles[candles.length - 2] : last;
+                const [_, openP, highP, lowP, closeP, vol] = last;
+                const prevClose = prev[4];
+                results.push({
+                  symbol: sym,
+                  name: info.name,
+                  price: closeP,
+                  change: closeP - prevClose,
+                  changePercent: ((closeP - prevClose) / prevClose) * 100,
+                  volume: vol ? `${(vol / 1e6).toFixed(1)}M` : "N/A",
+                  high: highP,
+                  low: lowP,
+                  open: openP,
+                  close: prevClose,
+                  exchange: "NSE",
+                });
+              }
+            } catch (e) {
+              console.error(`Historical fallback failed for ${sym}:`, e);
+            }
+            await new Promise((r) => setTimeout(r, 350)); // respect rate limits
+          }
+          if (results.length) {
+            cachedFallbackQuotes = results;
+            cachedFallbackAt = now;
+          }
+          mapped = results;
+        }
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        data: mapped,
+        marketStatus: market.status,
+        istTime: market.istTime,
+        source,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
       const tokenToSymbol: Record<string, string> = {};
       for (const [sym, info] of Object.entries(STOCK_TOKENS)) {
         tokenToSymbol[info.token] = sym;
