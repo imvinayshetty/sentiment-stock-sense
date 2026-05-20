@@ -304,29 +304,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-      const tokenToSymbol: Record<string, string> = {};
-      for (const [sym, info] of Object.entries(STOCK_TOKENS)) {
-        tokenToSymbol[info.token] = sym;
-      }
-
-      const mapped = (quotes.data?.fetched || []).map((item: any) => ({
-        symbol: tokenToSymbol[item.symbolToken] || item.tradingSymbol,
-        name: STOCK_TOKENS[tokenToSymbol[item.symbolToken]]?.name || item.tradingSymbol,
-        price: item.ltp,
-        change: item.netChange || (item.ltp - item.close),
-        changePercent: item.percentChange || ((item.ltp - item.close) / item.close * 100),
-        volume: item.tradeVolume ? `${(item.tradeVolume / 1e6).toFixed(1)}M` : "N/A",
-        high: item.high,
-        low: item.low,
-        open: item.open,
-        close: item.close,
-        exchange: "NSE",
-      }));
-
-      return new Response(JSON.stringify({ success: true, data: mapped }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     if (action === "historical" && symbol) {
       const stockInfo = STOCK_TOKENS[symbol.toUpperCase()];
