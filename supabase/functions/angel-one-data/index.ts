@@ -1,57 +1,106 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Cached JWT across warm invocations (Angel One rate-limits logins hard)
+const LOGIN_REFRESH_MS = 6 * 60 * 60 * 1000;
+const LOGIN_BACKOFF_MS = 90 * 1000;
+const FALLBACK_CACHE_MS = 15 * 60 * 1000;
+const LOGIN_RATE_LIMIT_ERROR = "ANGEL_ONE_LOGIN_RATE_LIMITED";
+
 let cachedJwt: string | null = null;
 let cachedJwtExpiry = 0;
 let cachedIP: string | null = null;
-// Cache of last-close fallback quotes (when market closed or quote API unavailable)
 let cachedFallbackQuotes: any[] | null = null;
 let cachedFallbackAt = 0;
+let loginInFlight: Promise<string> | null = null;
+let loginRateLimitedUntil = 0;
 
-// NSE market status: Mon–Fri, 09:15–15:30 IST (holidays not handled — closest approximation)
+const STOCK_TOKENS: Record<string, { token: string; name: string }> = {
+  RELIANCE: { token: "2885", name: "Reliance Industries" },
+  TCS: { token: "11536", name: "Tata Consultancy Services" },
+  INFY: { token: "1594", name: "Infosys Ltd." },
+  HDFCBANK: { token: "1333", name: "HDFC Bank Ltd." },
+  ICICIBANK: { token: "4963", name: "ICICI Bank Ltd." },
+  WIPRO: { token: "3787", name: "Wipro Ltd." },
+  TATAMOTORS: { token: "3456", name: "Tata Motors Ltd." },
+  SBIN: { token: "3045", name: "State Bank of India" },
+  BAJFINANCE: { token: "317", name: "Bajaj Finance Ltd." },
+  ITC: { token: "1660", name: "ITC Ltd." },
+};
+
 function getMarketStatus(): { status: "OPEN" | "CLOSED"; istTime: string } {
   const now = new Date();
-  // Convert to IST (UTC+5:30)
   const istMs = now.getTime() + (5 * 60 + 30) * 60 * 1000;
   const ist = new Date(istMs);
-  const day = ist.getUTCDay(); // 0 Sun .. 6 Sat
+  const day = ist.getUTCDay();
   const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   const isWeekday = day >= 1 && day <= 5;
-  const open = isWeekday && minutes >= (9 * 60 + 15) && minutes <= (15 * 60 + 30);
+  const open = isWeekday && minutes >= 9 * 60 + 15 && minutes <= 15 * 60 + 30;
+
   return {
     status: open ? "OPEN" : "CLOSED",
     istTime: `${String(ist.getUTCHours()).padStart(2, "0")}:${String(ist.getUTCMinutes()).padStart(2, "0")} IST`,
   };
 }
 
-// Indian stock token mapping (NSE exchange tokens)
-const STOCK_TOKENS: Record<string, { token: string; name: string }> = {
-  "RELIANCE": { token: "2885", name: "Reliance Industries" },
-  "TCS": { token: "11536", name: "Tata Consultancy Services" },
-  "INFY": { token: "1594", name: "Infosys Ltd." },
-  "HDFCBANK": { token: "1333", name: "HDFC Bank Ltd." },
-  "ICICIBANK": { token: "4963", name: "ICICI Bank Ltd." },
-  "WIPRO": { token: "3787", name: "Wipro Ltd." },
-  "TATAMOTORS": { token: "3456", name: "Tata Motors Ltd." },
-  "SBIN": { token: "3045", name: "State Bank of India" },
-  "BAJFINANCE": { token: "317", name: "Bajaj Finance Ltd." },
-  "ITC": { token: "1660", name: "ITC Ltd." },
-};
+function isRateLimitErrorMessage(message: string) {
+  return message.toLowerCase().includes("exceeding access rate");
+}
+
+function isLoginRateLimitError(error: unknown) {
+  return error instanceof Error && error.message === LOGIN_RATE_LIMIT_ERROR;
+}
+
+function isInvalidTokenResponse(payload: any) {
+  const errorCode = String(payload?.errorCode ?? payload?.errorcode ?? "").toUpperCase();
+  const message = String(payload?.message ?? "").toLowerCase();
+  return errorCode === "AB1010" || message.includes("invalid token");
+}
+
+function getTokenToSymbolMap() {
+  return Object.entries(STOCK_TOKENS).reduce<Record<string, string>>((acc, [symbol, info]) => {
+    acc[info.token] = symbol;
+    return acc;
+  }, {});
+}
+
+function mapQuoteItem(item: any, tokenToSymbol: Record<string, string>) {
+  const symbol = tokenToSymbol[item.symbolToken] || item.tradingSymbol;
+  const close = Number(item.close ?? item.ltp ?? 0);
+  const ltp = Number(item.ltp ?? close);
+  const change = Number(item.netChange ?? ltp - close);
+  const changePercent = Number(
+    item.percentChange ?? (close ? ((ltp - close) / close) * 100 : 0),
+  );
+
+  return {
+    symbol,
+    name: STOCK_TOKENS[symbol]?.name || item.tradingSymbol,
+    price: ltp,
+    change,
+    changePercent,
+    volume: item.tradeVolume ? `${(item.tradeVolume / 1e6).toFixed(1)}M` : "N/A",
+    high: Number(item.high ?? ltp),
+    low: Number(item.low ?? ltp),
+    open: Number(item.open ?? close ?? ltp),
+    close,
+    exchange: "NSE",
+  };
+}
 
 async function generateTOTP(secret: string): Promise<string> {
-  // Base32 decode
   const base32Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   const bits: number[] = [];
+
   for (const c of secret.toUpperCase().replace(/=+$/, "")) {
     const val = base32Chars.indexOf(c);
     if (val === -1) continue;
     for (let i = 4; i >= 0; i--) bits.push((val >> i) & 1);
   }
+
   const bytes = new Uint8Array(Math.floor(bits.length / 8));
   for (let i = 0; i < bytes.length; i++) {
     let byte = 0;
@@ -63,6 +112,7 @@ async function generateTOTP(secret: string): Promise<string> {
   const timeStep = Math.floor(epoch / 30);
   const timeBytes = new Uint8Array(8);
   let t = timeStep;
+
   for (let i = 7; i >= 0; i--) {
     timeBytes[i] = t & 0xff;
     t = Math.floor(t / 256);
@@ -70,34 +120,24 @@ async function generateTOTP(secret: string): Promise<string> {
 
   const key = await crypto.subtle.importKey("raw", bytes, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, timeBytes));
-
   const offset = sig[sig.length - 1] & 0x0f;
   const code = ((sig[offset] & 0x7f) << 24) | (sig[offset + 1] << 16) | (sig[offset + 2] << 8) | sig[offset + 3];
+
   return String(code % 1000000).padStart(6, "0");
 }
 
 async function getPublicIP(): Promise<string> {
   if (cachedIP) return cachedIP;
+
   try {
-    const r = await fetch("https://api.ipify.org?format=json");
-    const j = await r.json();
-    cachedIP = j.ip || "1.1.1.1";
-    return cachedIP;
+    const response = await fetch("https://api.ipify.org?format=json");
+    const data = await response.json();
+    cachedIP = data.ip || "1.1.1.1";
   } catch {
     cachedIP = "1.1.1.1";
-    return cachedIP;
   }
-}
 
-async function getJwt(publicIP: string, forceRefresh = false): Promise<string> {
-  const now = Date.now();
-  if (!forceRefresh && cachedJwt && now < cachedJwtExpiry) {
-    return cachedJwt;
-  }
-  cachedJwt = await loginAngelOne(publicIP);
-  // Angel One JWTs last ~24h; refresh every 6h to be safe
-  cachedJwtExpiry = now + 6 * 60 * 60 * 1000;
-  return cachedJwt;
+  return cachedIP;
 }
 
 async function loginAngelOne(publicIP: string): Promise<string> {
@@ -105,14 +145,13 @@ async function loginAngelOne(publicIP: string): Promise<string> {
   const clientId = Deno.env.get("ANGEL_ONE_CLIENT_ID")!;
   const password = Deno.env.get("ANGEL_ONE_PASSWORD")!;
   const totpSecret = Deno.env.get("ANGEL_ONE_TOTP_SECRET")!;
-
   const totp = await generateTOTP(totpSecret);
 
   const res = await fetch("https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Accept": "application/json",
+      Accept: "application/json",
       "X-UserType": "USER",
       "X-SourceID": "WEB",
       "X-ClientLocalIP": "192.168.1.1",
@@ -123,22 +162,67 @@ async function loginAngelOne(publicIP: string): Promise<string> {
     },
     body: JSON.stringify({
       clientcode: clientId,
-      password: password,
-      totp: totp,
+      password,
+      totp,
     }),
   });
 
   const text = await res.text();
   let data: any;
+
   try {
     data = JSON.parse(text);
   } catch {
+    if (res.status === 403 && isRateLimitErrorMessage(text)) {
+      throw new Error(LOGIN_RATE_LIMIT_ERROR);
+    }
     throw new Error(`Login failed (non-JSON, status ${res.status}): ${text.slice(0, 200)}`);
   }
+
+  const message = String(data?.message ?? "");
   if (!data.data?.jwtToken) {
-    throw new Error(`Login failed: ${data.message || JSON.stringify(data)}`);
+    if (res.status === 403 && isRateLimitErrorMessage(message)) {
+      throw new Error(LOGIN_RATE_LIMIT_ERROR);
+    }
+    throw new Error(`Login failed: ${message || JSON.stringify(data)}`);
   }
+
   return data.data.jwtToken;
+}
+
+async function getJwt(publicIP: string, forceRefresh = false): Promise<string> {
+  const now = Date.now();
+
+  if (!forceRefresh && cachedJwt && now < cachedJwtExpiry) {
+    return cachedJwt;
+  }
+
+  if (now < loginRateLimitedUntil) {
+    throw new Error(LOGIN_RATE_LIMIT_ERROR);
+  }
+
+  if (loginInFlight) {
+    return loginInFlight;
+  }
+
+  loginInFlight = (async () => {
+    try {
+      const jwt = await loginAngelOne(publicIP);
+      cachedJwt = jwt;
+      cachedJwtExpiry = Date.now() + LOGIN_REFRESH_MS;
+      loginRateLimitedUntil = 0;
+      return jwt;
+    } catch (error) {
+      if (isLoginRateLimitError(error)) {
+        loginRateLimitedUntil = Date.now() + LOGIN_BACKOFF_MS;
+      }
+      throw error;
+    } finally {
+      loginInFlight = null;
+    }
+  })();
+
+  return loginInFlight;
 }
 
 async function getMarketQuotes(jwtToken: string, tokens: string[], publicIP: string): Promise<any> {
@@ -148,7 +232,7 @@ async function getMarketQuotes(jwtToken: string, tokens: string[], publicIP: str
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Accept": "application/json",
+      Accept: "application/json",
       "X-UserType": "USER",
       "X-SourceID": "WEB",
       "X-ClientLocalIP": "192.168.1.1",
@@ -156,34 +240,35 @@ async function getMarketQuotes(jwtToken: string, tokens: string[], publicIP: str
       "X-MACAddress": "aa:bb:cc:dd:ee:ff",
       "User-Agent": "Mozilla/5.0",
       "X-PrivateKey": apiKey,
-      "Authorization": `Bearer ${jwtToken}`,
+      Authorization: `Bearer ${jwtToken}`,
     },
     body: JSON.stringify({
       mode: "FULL",
-      exchangeTokens: {
-        NSE: tokens,
-      },
+      exchangeTokens: { NSE: tokens },
     }),
   });
 
   const text = await res.text();
-  try { return JSON.parse(text); } catch { throw new Error(`Quotes failed (status ${res.status}): ${text.slice(0,200)}`); }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Quotes failed (status ${res.status}): ${text.slice(0, 200)}`);
+  }
 }
 
 async function getHistoricalData(jwtToken: string, symbolToken: string, interval: string, publicIP: string): Promise<any> {
   const apiKey = Deno.env.get("ANGEL_ONE_API_KEY")!;
-  
   const toDate = new Date();
   const fromDate = new Date();
   fromDate.setDate(fromDate.getDate() - 15);
 
-  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  const fmt = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 
   const res = await fetch("https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Accept": "application/json",
+      Accept: "application/json",
       "X-UserType": "USER",
       "X-SourceID": "WEB",
       "X-ClientLocalIP": "192.168.1.1",
@@ -191,7 +276,7 @@ async function getHistoricalData(jwtToken: string, symbolToken: string, interval
       "X-MACAddress": "aa:bb:cc:dd:ee:ff",
       "User-Agent": "Mozilla/5.0",
       "X-PrivateKey": apiKey,
-      "Authorization": `Bearer ${jwtToken}`,
+      Authorization: `Bearer ${jwtToken}`,
     },
     body: JSON.stringify({
       exchange: "NSE",
@@ -203,7 +288,74 @@ async function getHistoricalData(jwtToken: string, symbolToken: string, interval
   });
 
   const text = await res.text();
-  try { return JSON.parse(text); } catch { throw new Error(`Historical failed (status ${res.status}): ${text.slice(0,200)}`); }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Historical failed (status ${res.status}): ${text.slice(0, 200)}`);
+  }
+}
+
+async function getFallbackQuotes(publicIP: string, jwtToken: string | null) {
+  const now = Date.now();
+  if (cachedFallbackQuotes && now - cachedFallbackAt < FALLBACK_CACHE_MS) {
+    return cachedFallbackQuotes;
+  }
+
+  if (!jwtToken) {
+    return cachedFallbackQuotes ?? [];
+  }
+
+  const results: any[] = [];
+  let activeJwt = jwtToken;
+
+  for (const [symbol, info] of Object.entries(STOCK_TOKENS)) {
+    try {
+      let historical = await getHistoricalData(activeJwt, info.token, "ONE_DAY", publicIP);
+
+      if (isInvalidTokenResponse(historical)) {
+        activeJwt = await getJwt(publicIP, true);
+        historical = await getHistoricalData(activeJwt, info.token, "ONE_DAY", publicIP);
+      }
+
+      const candles: any[] = historical?.data || [];
+      if (!candles.length) {
+        continue;
+      }
+
+      const last = candles[candles.length - 1];
+      const prev = candles.length >= 2 ? candles[candles.length - 2] : last;
+      const [, openPrice, highPrice, lowPrice, closePrice, volume] = last;
+      const prevClose = Number(prev[4] ?? closePrice);
+
+      results.push({
+        symbol,
+        name: info.name,
+        price: Number(closePrice),
+        change: Number(closePrice) - prevClose,
+        changePercent: prevClose ? ((Number(closePrice) - prevClose) / prevClose) * 100 : 0,
+        volume: volume ? `${(Number(volume) / 1e6).toFixed(1)}M` : "N/A",
+        high: Number(highPrice ?? closePrice),
+        low: Number(lowPrice ?? closePrice),
+        open: Number(openPrice ?? closePrice),
+        close: prevClose,
+        exchange: "NSE",
+      });
+    } catch (error) {
+      if (isLoginRateLimitError(error)) {
+        break;
+      }
+      console.error(`Historical fallback failed for ${symbol}:`, error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+
+  if (results.length) {
+    cachedFallbackQuotes = results;
+    cachedFallbackAt = now;
+  }
+
+  return results.length ? results : cachedFallbackQuotes ?? [];
 }
 
 serve(async (req) => {
@@ -215,83 +367,48 @@ serve(async (req) => {
     const url = new URL(req.url);
     const action = url.searchParams.get("action") || "quotes";
     const symbol = url.searchParams.get("symbol");
-
-    const publicIP = await getPublicIP();
-    let jwtToken = await getJwt(publicIP);
+    const market = getMarketStatus();
 
     if (action === "quotes") {
-      const tokens = Object.values(STOCK_TOKENS).map(s => s.token);
-      let quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
-      if (quotes?.errorcode === "AB1010" || quotes?.message?.toLowerCase?.().includes("invalid token")) {
-        jwtToken = await getJwt(publicIP, true);
-        quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
-      }
+      const publicIP = await getPublicIP();
+      const tokens = Object.values(STOCK_TOKENS).map((stock) => stock.token);
+      const tokenToSymbol = getTokenToSymbolMap();
 
-      const market = getMarketStatus();
-      const tokenToSymbol: Record<string, string> = {};
-      for (const [sym, info] of Object.entries(STOCK_TOKENS)) {
-        tokenToSymbol[info.token] = sym;
-      }
-
-      const fetched = quotes?.data?.fetched || [];
-      let mapped = fetched.map((item: any) => ({
-        symbol: tokenToSymbol[item.symbolToken] || item.tradingSymbol,
-        name: STOCK_TOKENS[tokenToSymbol[item.symbolToken]]?.name || item.tradingSymbol,
-        price: item.ltp,
-        change: item.netChange ?? (item.ltp - item.close),
-        changePercent: item.percentChange ?? ((item.ltp - item.close) / item.close * 100),
-        volume: item.tradeVolume ? `${(item.tradeVolume / 1e6).toFixed(1)}M` : "N/A",
-        high: item.high,
-        low: item.low,
-        open: item.open,
-        close: item.close,
-        exchange: "NSE",
-      }));
-
+      let jwtToken: string | null = null;
+      let mapped: any[] = [];
       let source: "live" | "last-close" = "live";
 
-      // Fallback: market quote endpoint failed or returned nothing → fetch last daily candle per symbol
-      if (mapped.length === 0) {
-        source = "last-close";
-        const now = Date.now();
-        if (cachedFallbackQuotes && now - cachedFallbackAt < 5 * 60 * 1000) {
-          mapped = cachedFallbackQuotes;
-        } else {
-          const results: any[] = [];
-          for (const [sym, info] of Object.entries(STOCK_TOKENS)) {
-            try {
-              const h = await getHistoricalData(jwtToken, info.token, "ONE_DAY", publicIP);
-              const candles: any[] = h?.data || [];
-              if (candles.length >= 1) {
-                const last = candles[candles.length - 1];
-                const prev = candles.length >= 2 ? candles[candles.length - 2] : last;
-                const [_, openP, highP, lowP, closeP, vol] = last;
-                const prevClose = prev[4];
-                results.push({
-                  symbol: sym,
-                  name: info.name,
-                  price: closeP,
-                  change: closeP - prevClose,
-                  changePercent: ((closeP - prevClose) / prevClose) * 100,
-                  volume: vol ? `${(vol / 1e6).toFixed(1)}M` : "N/A",
-                  high: highP,
-                  low: lowP,
-                  open: openP,
-                  close: prevClose,
-                  exchange: "NSE",
-                });
-              }
-            } catch (e) {
-              console.error(`Historical fallback failed for ${sym}:`, e);
-            }
-            await new Promise((r) => setTimeout(r, 350)); // respect rate limits
-          }
-          if (results.length) {
-            cachedFallbackQuotes = results;
-            cachedFallbackAt = now;
-          }
-          mapped = results;
+      try {
+        if (market.status === "OPEN" || !(cachedFallbackQuotes && Date.now() - cachedFallbackAt < FALLBACK_CACHE_MS)) {
+          jwtToken = await getJwt(publicIP);
         }
+      } catch (error) {
+        if (!isLoginRateLimitError(error)) {
+          throw error;
+        }
+      }
+
+      if (jwtToken && market.status === "OPEN") {
+        let quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
+
+        if (isInvalidTokenResponse(quotes)) {
+          try {
+            jwtToken = await getJwt(publicIP, true);
+            quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
+          } catch (error) {
+            if (!isLoginRateLimitError(error)) {
+              throw error;
+            }
+            jwtToken = null;
+          }
+        }
+
+        mapped = (quotes?.data?.fetched || []).map((item: any) => mapQuoteItem(item, tokenToSymbol));
+      }
+
+      if (!mapped.length) {
+        source = "last-close";
+        mapped = await getFallbackQuotes(publicIP, jwtToken);
       }
 
       return new Response(JSON.stringify({
@@ -313,22 +430,54 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
+      const publicIP = await getPublicIP();
+      let jwtToken: string;
+
+      try {
+        jwtToken = await getJwt(publicIP);
+      } catch (error) {
+        if (isLoginRateLimitError(error)) {
+          return new Response(JSON.stringify({ success: true, data: [] }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        throw error;
+      }
+
       const interval = url.searchParams.get("interval") || "ONE_DAY";
-      const historical = await getHistoricalData(jwtToken, stockInfo.token, interval, publicIP);
+      let historical = await getHistoricalData(jwtToken, stockInfo.token, interval, publicIP);
+
+      if (isInvalidTokenResponse(historical)) {
+        try {
+          jwtToken = await getJwt(publicIP, true);
+          historical = await getHistoricalData(jwtToken, stockInfo.token, interval, publicIP);
+        } catch (error) {
+          if (isLoginRateLimitError(error)) {
+            return new Response(JSON.stringify({ success: true, data: [] }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          throw error;
+        }
+      }
+
       if (historical?.errorCode || historical?.errorcode) {
         console.error("Angel One historical error:", historical);
       }
+
       return new Response(JSON.stringify({ success: true, data: historical.data || [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (action === "symbols") {
-      const symbols = Object.entries(STOCK_TOKENS).map(([symbol, info]) => ({
-        symbol,
+      const symbols = Object.entries(STOCK_TOKENS).map(([stockSymbol, info]) => ({
+        symbol: stockSymbol,
         name: info.name,
         token: info.token,
       }));
+
       return new Response(JSON.stringify({ success: true, data: symbols }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -340,7 +489,8 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error("Angel One API error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return new Response(JSON.stringify({ success: false, error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
