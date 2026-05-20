@@ -2,8 +2,9 @@ import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStocks } from "@/lib/stockData";
 
 const TickerBar = () => {
-  const { data: liveStocks } = useStockQuotes();
-  const stocks = liveStocks?.length ? liveStocks : getStocks();
+  const { data: quotes } = useStockQuotes();
+  const liveStocks = quotes?.data ?? [];
+  const stocks = liveStocks.length ? liveStocks : getStocks();
   const doubled = [...stocks, ...stocks];
 
   return (
