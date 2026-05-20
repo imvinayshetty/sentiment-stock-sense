@@ -60,7 +60,7 @@ async function loginAngelOne(): Promise<string> {
 
   const totp = await generateTOTP(totpSecret);
 
-  const res = await fetch("https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByMpin", {
+  const res = await fetch("https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -74,7 +74,7 @@ async function loginAngelOne(): Promise<string> {
     },
     body: JSON.stringify({
       clientcode: clientId,
-      mpin: password,
+      password: password,
       totp: totp,
     }),
   });
