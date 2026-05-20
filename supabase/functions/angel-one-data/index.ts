@@ -207,6 +207,7 @@ serve(async (req) => {
         jwtToken = await getJwt(publicIP, true);
         quotes = await getMarketQuotes(jwtToken, tokens, publicIP);
       }
+      console.log("Angel One quotes raw response:", JSON.stringify(quotes).slice(0, 2000));
       
       // Map tokens back to symbols
       const tokenToSymbol: Record<string, string> = {};
