@@ -7,8 +7,8 @@ interface StockDetailProps {
 }
 
 const StockDetail = ({ symbol }: StockDetailProps) => {
-  const { data: liveStocks } = useStockQuotes();
-  const liveStock = liveStocks?.find(s => s.symbol === symbol);
+  const { data: quotes } = useStockQuotes();
+  const liveStock = quotes?.data?.find((s) => s.symbol === symbol);
   const stock = liveStock || getStock(symbol);
   if (!stock) return null;
 
