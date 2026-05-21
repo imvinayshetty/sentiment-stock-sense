@@ -20,6 +20,16 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
     return "bg-chart-neutral";
   };
 
+  // Confidence: combines distance from neutral (50) with sample-size weight (log scale)
+  const extremity = Math.min(1, Math.abs(score - 50) / 40); // 0..1
+  const volumeWeight = Math.min(1, Math.log10(Math.max(tweets, 1) + 1) / Math.log10(20001)); // ~0..1 up to 20k mentions
+  const confidence = Math.round((extremity * 0.6 + volumeWeight * 0.4) * 100);
+  const confidenceLabel = confidence >= 75 ? "High" : confidence >= 50 ? "Moderate" : confidence >= 30 ? "Low" : "Very Low";
+  const confidenceColor =
+    confidence >= 75 ? "text-chart-up" : confidence >= 50 ? "text-chart-neutral" : "text-chart-down";
+  const confidenceBar =
+    confidence >= 75 ? "bg-chart-up" : confidence >= 50 ? "bg-chart-neutral" : "bg-chart-down";
+
   const recommendation =
     score >= 70
       ? { action: "STRONG BUY", reason: "Highly positive sentiment suggests upward momentum.", Icon: ArrowUpRight, color: "text-chart-up", bg: "bg-chart-up/15 border-chart-up/30" }
@@ -62,12 +72,23 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
       <div className={`mt-5 flex items-start gap-3 rounded-lg border p-3 ${recommendation.bg}`}>
         <recommendation.Icon className={`mt-0.5 h-5 w-5 ${recommendation.color}`} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className={`font-mono text-sm font-bold ${recommendation.color}`}>{recommendation.action}</span>
             <span className="text-xs text-muted-foreground">· Sentiment-based signal</span>
+            <span className={`ml-auto rounded-full border border-border bg-background/60 px-2 py-0.5 font-mono text-[10px] ${confidenceColor}`}>
+              {confidenceLabel} confidence · {confidence}%
+            </span>
+          </div>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className={`h-full ${confidenceBar} transition-all`}
+              style={{ width: `${confidence}%` }}
+            />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{recommendation.reason}</p>
-          <p className="mt-1 text-[10px] text-muted-foreground/70">Not financial advice. For informational purposes only.</p>
+          <p className="mt-1 text-[10px] text-muted-foreground/70">
+            Confidence reflects sentiment strength and social-mention volume. Not financial advice.
+          </p>
         </div>
       </div>
     </div>
