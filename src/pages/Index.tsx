@@ -5,6 +5,7 @@ import StockSearch from "@/components/StockSearch";
 import StockDetail from "@/components/StockDetail";
 import PredictionChart from "@/components/PredictionChart";
 import SentimentGauge from "@/components/SentimentGauge";
+import PriceTarget from "@/components/PriceTarget";
 import NewsFeed from "@/components/NewsFeed";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 
@@ -73,6 +74,11 @@ const Index = () => {
           <div className="animate-fade-in-up" style={{ animationDelay: "300ms" }}>
             <SentimentGauge symbol={selectedSymbol} />
           </div>
+        </div>
+
+        {/* Price Target */}
+        <div className="animate-fade-in-up" style={{ animationDelay: "350ms" }}>
+          <PriceTarget symbol={selectedSymbol} />
         </div>
 
         {/* News */}
