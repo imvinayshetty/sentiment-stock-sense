@@ -53,6 +53,75 @@ export function getStocks(): StockQuote[] {
   return STOCKS;
 }
 
+// Full NSE universe known to the backend (kept in sync with edge function STOCK_TOKENS).
+// Used so search works even when live quotes haven't populated yet.
+const STOCK_DIRECTORY: { symbol: string; name: string }[] = [
+  { symbol: "RELIANCE", name: "Reliance Industries" },
+  { symbol: "TCS", name: "Tata Consultancy Services" },
+  { symbol: "INFY", name: "Infosys Ltd." },
+  { symbol: "HDFCBANK", name: "HDFC Bank Ltd." },
+  { symbol: "ICICIBANK", name: "ICICI Bank Ltd." },
+  { symbol: "WIPRO", name: "Wipro Ltd." },
+  { symbol: "TATAMOTORS", name: "Tata Motors Ltd." },
+  { symbol: "SBIN", name: "State Bank of India" },
+  { symbol: "BAJFINANCE", name: "Bajaj Finance Ltd." },
+  { symbol: "ITC", name: "ITC Ltd." },
+  { symbol: "HINDUNILVR", name: "Hindustan Unilever Ltd." },
+  { symbol: "KOTAKBANK", name: "Kotak Mahindra Bank" },
+  { symbol: "LT", name: "Larsen & Toubro" },
+  { symbol: "AXISBANK", name: "Axis Bank Ltd." },
+  { symbol: "MARUTI", name: "Maruti Suzuki India" },
+  { symbol: "ASIANPAINT", name: "Asian Paints Ltd." },
+  { symbol: "SUNPHARMA", name: "Sun Pharmaceutical" },
+  { symbol: "TITAN", name: "Titan Company Ltd." },
+  { symbol: "ULTRACEMCO", name: "UltraTech Cement" },
+  { symbol: "NESTLEIND", name: "Nestle India Ltd." },
+  { symbol: "BHARTIARTL", name: "Bharti Airtel Ltd." },
+  { symbol: "HCLTECH", name: "HCL Technologies" },
+  { symbol: "TECHM", name: "Tech Mahindra Ltd." },
+  { symbol: "POWERGRID", name: "Power Grid Corp." },
+  { symbol: "NTPC", name: "NTPC Ltd." },
+  { symbol: "ONGC", name: "Oil & Natural Gas Corp." },
+  { symbol: "COALINDIA", name: "Coal India Ltd." },
+  { symbol: "JSWSTEEL", name: "JSW Steel Ltd." },
+  { symbol: "TATASTEEL", name: "Tata Steel Ltd." },
+  { symbol: "HINDALCO", name: "Hindalco Industries" },
+  { symbol: "ADANIPORTS", name: "Adani Ports & SEZ" },
+  { symbol: "BAJAJFINSV", name: "Bajaj Finserv Ltd." },
+  { symbol: "DRREDDY", name: "Dr. Reddy's Labs" },
+  { symbol: "CIPLA", name: "Cipla Ltd." },
+  { symbol: "DIVISLAB", name: "Divi's Laboratories" },
+  { symbol: "GRASIM", name: "Grasim Industries" },
+  { symbol: "EICHERMOT", name: "Eicher Motors Ltd." },
+  { symbol: "HEROMOTOCO", name: "Hero MotoCorp Ltd." },
+  { symbol: "M_M", name: "Mahindra & Mahindra" },
+  { symbol: "BRITANNIA", name: "Britannia Industries" },
+  { symbol: "INDUSINDBK", name: "IndusInd Bank Ltd." },
+  { symbol: "TATACONSUM", name: "Tata Consumer Products" },
+  { symbol: "UPL", name: "UPL Ltd." },
+  { symbol: "APOLLOHOSP", name: "Apollo Hospitals" },
+  { symbol: "BPCL", name: "Bharat Petroleum" },
+];
+
+export function getStockDirectory(): StockQuote[] {
+  // Hydrate directory entries with any matching fallback prices; otherwise zeros.
+  return STOCK_DIRECTORY.map((entry) => {
+    const existing = STOCKS.find((s) => s.symbol === entry.symbol);
+    if (existing) return existing;
+    return {
+      symbol: entry.symbol,
+      name: entry.name,
+      price: 0,
+      change: 0,
+      changePercent: 0,
+      volume: "—",
+      high: 0,
+      low: 0,
+      open: 0,
+    };
+  });
+}
+
 export function getStock(symbol: string): StockQuote | undefined {
   return STOCKS.find((s) => s.symbol === symbol.toUpperCase());
 }
