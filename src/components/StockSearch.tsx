@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Search, TrendingUp, TrendingDown } from "lucide-react";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStocks, type StockQuote } from "@/lib/stockData";
 
@@ -8,15 +8,53 @@ interface StockSearchProps {
   selectedSymbol: string;
 }
 
+function scoreStock(s: StockQuote): number {
+  // Today's movement (history-relative via prev close baked into changePercent)
+  const move = s.changePercent ?? 0;
+  // Intraday momentum: where price sits in the day's range (0 = at low, 1 = at high)
+  const range = (s.high ?? s.price) - (s.low ?? s.price);
+  const pos = range > 0 ? ((s.price - (s.low ?? s.price)) / range) : 0.5;
+  // Gap from open: extends/contradicts trend
+  const gap = s.open ? ((s.price - s.open) / s.open) * 100 : 0;
+  return move * 1.0 + (pos - 0.5) * 2 + gap * 0.3;
+}
+
 const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const [query, setQuery] = useState("");
   const { data: quotes, isLoading } = useStockQuotes();
   const liveStocks = quotes?.data ?? [];
   const stocks = liveStocks.length ? liveStocks : getStocks();
-  const filtered = stocks.filter(
-    (s) =>
-      s.symbol.toLowerCase().includes(query.toLowerCase()) ||
-      s.name.toLowerCase().includes(query.toLowerCase())
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? stocks.filter(
+        (s) =>
+          s.symbol.toLowerCase().includes(q) ||
+          s.name.toLowerCase().includes(q),
+      )
+    : [];
+
+  const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
+  const topBuy = ranked.slice(0, 10);
+  const topSell = ranked.slice(-10).reverse();
+
+  const renderCard = (stock: StockQuote) => (
+    <button
+      key={stock.symbol}
+      onClick={() => onSelect(stock.symbol)}
+      className={`rounded-lg border p-3 text-left transition-all hover:border-primary/50 hover:card-glow ${
+        selectedSymbol === stock.symbol
+          ? "border-primary bg-primary/10 card-glow"
+          : "border-border bg-card"
+      }`}
+    >
+      <div className="font-mono text-sm font-bold text-foreground">{stock.symbol}</div>
+      <div className="mt-0.5 truncate text-xs text-muted-foreground">{stock.name}</div>
+      <div className="mt-1 font-mono text-sm text-foreground">₹{stock.price.toFixed(2)}</div>
+      <div className={`font-mono text-xs ${stock.change >= 0 ? "text-chart-up" : "text-chart-down"}`}>
+        {stock.change >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+      </div>
+    </button>
   );
 
   return (
@@ -36,26 +74,38 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
           </span>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-        {filtered.map((stock) => (
-          <button
-            key={stock.symbol}
-            onClick={() => onSelect(stock.symbol)}
-            className={`rounded-lg border p-3 text-left transition-all hover:border-primary/50 hover:card-glow ${
-              selectedSymbol === stock.symbol
-                ? "border-primary bg-primary/10 card-glow"
-                : "border-border bg-card"
-            }`}
-          >
-            <div className="font-mono text-sm font-bold text-foreground">{stock.symbol}</div>
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">{stock.name}</div>
-            <div className="mt-1 font-mono text-sm text-foreground">₹{stock.price.toFixed(2)}</div>
-            <div className={`font-mono text-xs ${stock.change >= 0 ? "text-chart-up" : "text-chart-down"}`}>
-              {stock.change >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+
+      {q ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+          {filtered.map(renderCard)}
+          {filtered.length === 0 && (
+            <p className="col-span-full text-sm text-muted-foreground">No stocks match "{query}".</p>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-lg border border-chart-up/30 bg-chart-up/5 p-3">
+            <header className="mb-2 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-chart-up" />
+              <h2 className="text-sm font-semibold text-foreground">Top 10 to Buy</h2>
+              <span className="ml-auto text-xs text-muted-foreground">Strong momentum today</span>
+            </header>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
+              {topBuy.map(renderCard)}
             </div>
-          </button>
-        ))}
-      </div>
+          </section>
+          <section className="rounded-lg border border-chart-down/30 bg-chart-down/5 p-3">
+            <header className="mb-2 flex items-center gap-2">
+              <TrendingDown className="h-4 w-4 text-chart-down" />
+              <h2 className="text-sm font-semibold text-foreground">Top 10 to Sell</h2>
+              <span className="ml-auto text-xs text-muted-foreground">Weak / declining today</span>
+            </header>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
+              {topSell.map(renderCard)}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 };
