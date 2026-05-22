@@ -104,26 +104,58 @@ const STOCK_DIRECTORY: { symbol: string; name: string }[] = [
 ];
 
 export function getStockDirectory(): StockQuote[] {
-  // Hydrate directory entries with any matching fallback prices; otherwise zeros.
+  // Hydrate directory entries with any matching fallback prices; otherwise generate
+  // deterministic per-symbol fallback values so every stock has plausible data.
   return STOCK_DIRECTORY.map((entry) => {
     const existing = STOCKS.find((s) => s.symbol === entry.symbol);
     if (existing) return existing;
-    return {
-      symbol: entry.symbol,
-      name: entry.name,
-      price: 0,
-      change: 0,
-      changePercent: 0,
-      volume: "—",
-      high: 0,
-      low: 0,
-      open: 0,
-    };
+    return synthesizeQuote(entry.symbol, entry.name);
   });
 }
 
 export function getStock(symbol: string): StockQuote | undefined {
-  return STOCKS.find((s) => s.symbol === symbol.toUpperCase());
+  const sym = symbol.toUpperCase();
+  const real = STOCKS.find((s) => s.symbol === sym);
+  if (real) return real;
+  const entry = STOCK_DIRECTORY.find((s) => s.symbol === sym);
+  if (entry) return synthesizeQuote(entry.symbol, entry.name);
+  return undefined;
+}
+
+// Simple deterministic hash → seeded pseudo-random in [0, 1)
+function hashSymbol(symbol: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < symbol.length; i++) {
+    h ^= symbol.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 0xffffffff;
+}
+function seededRand(seed: number, salt: number): number {
+  const x = Math.sin(seed * 1000 + salt * 7919) * 10000;
+  return x - Math.floor(x);
+}
+
+function synthesizeQuote(symbol: string, name: string): StockQuote {
+  const h = hashSymbol(symbol);
+  const price = +(150 + h * 4850).toFixed(2); // ₹150 – ₹5000
+  const changePercent = +(((seededRand(h, 1) - 0.5) * 4)).toFixed(2); // -2% .. +2%
+  const change = +((price * changePercent) / 100).toFixed(2);
+  const open = +(price - change * seededRand(h, 2)).toFixed(2);
+  const high = +Math.max(price, open, price * (1 + seededRand(h, 3) * 0.015)).toFixed(2);
+  const low = +Math.min(price, open, price * (1 - seededRand(h, 4) * 0.015)).toFixed(2);
+  const volM = +(1 + seededRand(h, 5) * 30).toFixed(1);
+  return {
+    symbol,
+    name,
+    price,
+    change,
+    changePercent,
+    volume: `${volM}M`,
+    high,
+    low,
+    open,
+  };
 }
 
 export function generatePredictions(symbol: string): PredictionData[] {
@@ -175,7 +207,7 @@ export function getNews(_symbol?: string): NewsItem[] {
 }
 
 export function getSentimentScore(symbol: string): { score: number; label: string; tweets: number } {
-  const scores: Record<string, { score: number; label: string; tweets: number }> = {
+  const overrides: Record<string, { score: number; label: string; tweets: number }> = {
     RELIANCE: { score: 72, label: "Bullish", tweets: 14523 },
     TCS: { score: 45, label: "Neutral", tweets: 8921 },
     INFY: { score: 68, label: "Bullish", tweets: 11203 },
@@ -187,5 +219,18 @@ export function getSentimentScore(symbol: string): { score: number; label: strin
     BAJFINANCE: { score: 85, label: "Very Bullish", tweets: 6780 },
     ITC: { score: 52, label: "Neutral", tweets: 9100 },
   };
-  return scores[symbol] || { score: 50, label: "Neutral", tweets: 0 };
+  const sym = symbol.toUpperCase();
+  if (overrides[sym]) return overrides[sym];
+  // Deterministic per-symbol sentiment so every stock gets a stable score.
+  const h = hashSymbol(sym);
+  const score = Math.round(25 + seededRand(h, 11) * 60); // 25..85
+  const tweets = Math.round(500 + seededRand(h, 12) * 24500); // 500..25k
+  const label =
+    score >= 75 ? "Very Bullish"
+    : score >= 60 ? "Bullish"
+    : score >= 55 ? "Slightly Bullish"
+    : score >= 45 ? "Neutral"
+    : score >= 35 ? "Slightly Bearish"
+    : "Bearish";
+  return { score, label, tweets };
 }
