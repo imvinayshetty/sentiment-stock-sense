@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, TrendingUp, TrendingDown } from "lucide-react";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStocks, type StockQuote } from "@/lib/stockData";
@@ -33,6 +33,18 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
           s.name.toLowerCase().includes(q),
       )
     : [];
+
+  // Auto-select the best match as the user types so StockDetail updates live
+  useEffect(() => {
+    if (!q || filtered.length === 0) return;
+    const exact = filtered.find((s) => s.symbol.toLowerCase() === q);
+    const startsWith = filtered.find((s) => s.symbol.toLowerCase().startsWith(q));
+    const best = exact ?? startsWith ?? filtered[0];
+    if (best && best.symbol !== selectedSymbol) {
+      onSelect(best.symbol);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, filtered.length]);
 
   const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
   const topBuy = ranked.slice(0, 10);
