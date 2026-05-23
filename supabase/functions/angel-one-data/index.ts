@@ -106,6 +106,11 @@ function mapQuote(symbol: string, info: { name: string; yahooSymbol: string }, r
   const closes = (quote.close ?? []).filter((value: number | null) => typeof value === "number");
   const previousClose = Number(meta.chartPreviousClose ?? closes.at(-2) ?? meta.regularMarketPrice ?? 0);
   const price = Number(meta.regularMarketPrice ?? closes.at(-1) ?? previousClose ?? 0);
+
+  if (!price || meta.instrumentType === "MUTUALFUND" || String(meta.shortName ?? "").startsWith("** SEE<")) {
+    return null;
+  }
+
   const open = Number(meta.regularMarketOpen ?? quote.open?.at(-1) ?? previousClose ?? price);
   const high = Number(meta.regularMarketDayHigh ?? quote.high?.at(-1) ?? price);
   const low = Number(meta.regularMarketDayLow ?? quote.low?.at(-1) ?? price);
