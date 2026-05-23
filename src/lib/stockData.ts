@@ -14,6 +14,11 @@ export interface StockQuote {
   exchange?: string;
 }
 
+export interface StockDirectoryEntry {
+  symbol: string;
+  name: string;
+}
+
 export interface PredictionData {
   date: string;
   actual?: number;
@@ -103,14 +108,13 @@ const STOCK_DIRECTORY: { symbol: string; name: string }[] = [
   { symbol: "BPCL", name: "Bharat Petroleum" },
 ];
 
-export function getStockDirectory(): StockQuote[] {
-  // Hydrate directory entries with any matching fallback prices; otherwise generate
-  // deterministic per-symbol fallback values so every stock has plausible data.
-  return STOCK_DIRECTORY.map((entry) => {
-    const existing = STOCKS.find((s) => s.symbol === entry.symbol);
-    if (existing) return existing;
-    return synthesizeQuote(entry.symbol, entry.name);
-  });
+export function getStockDirectory(): StockDirectoryEntry[] {
+  return STOCK_DIRECTORY;
+}
+
+export function getStockMeta(symbol: string): StockDirectoryEntry | undefined {
+  const sym = symbol.toUpperCase();
+  return STOCK_DIRECTORY.find((stock) => stock.symbol === sym);
 }
 
 export function getStock(symbol: string): StockQuote | undefined {
