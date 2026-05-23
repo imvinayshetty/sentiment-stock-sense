@@ -185,7 +185,7 @@ serve(async (req) => {
         }),
       );
 
-      const data = results.filter(Boolean);
+      const data = results.filter((item): item is NonNullable<typeof item> => Boolean(item) && item.price > 0);
       const mostRecentTime = data.reduce<number | undefined>((latest, item: any) => {
         if (!item?.marketTime) return latest;
         return latest ? Math.max(latest, item.marketTime) : item.marketTime;
