@@ -185,14 +185,15 @@ serve(async (req) => {
         if (!item?.marketTime) return latest;
         return latest ? Math.max(latest, item.marketTime) : item.marketTime;
       }, undefined);
-      const market = getMarketStatus(mostRecentTime);
+      const market = getMarketStatus();
+      const istTime = mostRecentTime ? getMarketStatus(mostRecentTime).istTime : market.istTime;
 
       return new Response(JSON.stringify({
         success: true,
         data,
         marketStatus: market.status,
-        istTime: market.istTime,
-        source: data.length ? "live" : "last-close",
+        istTime,
+        source: market.status === "OPEN" ? "live" : "last-close",
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
