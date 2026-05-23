@@ -89,7 +89,7 @@ const Index = () => {
 
       {/* Footer */}
       <footer className="border-t border-border py-6 text-center text-xs text-muted-foreground">
-        Stock Market Prediction App · Powered by ARIMA, LSTM & Linear Regression · Data is simulated for demonstration
+        Stock Market Prediction App · Live NSE pricing and chart data shown when verified by the backend
       </footer>
     </div>
   );

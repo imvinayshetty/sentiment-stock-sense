@@ -1,10 +1,20 @@
 import { useStockQuotes } from "@/hooks/useAngelOneData";
-import { getStocks } from "@/lib/stockData";
 
 const TickerBar = () => {
   const { data: quotes } = useStockQuotes();
   const liveStocks = quotes?.data ?? [];
-  const stocks = liveStocks.length ? liveStocks : getStocks();
+  const stocks = liveStocks;
+
+  if (!stocks.length) {
+    return (
+      <div className="w-full overflow-hidden border-b border-border bg-secondary/50 backdrop-blur-sm">
+        <div className="py-2 text-center font-mono text-sm text-muted-foreground">
+          Waiting for verified NSE market data...
+        </div>
+      </div>
+    );
+  }
+
   const doubled = [...stocks, ...stocks];
 
   return (
