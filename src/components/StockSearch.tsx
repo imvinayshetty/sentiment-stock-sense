@@ -55,6 +55,7 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
   const topBuy = ranked.slice(0, 10);
   const topSell = ranked.slice(-10).reverse();
+  const showNoVerifiedData = !isLoading && stocks.length === 0;
 
   const renderCard = (stock: StockQuote) => (
     <button
@@ -95,6 +96,9 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
 
       {q ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+          {showNoVerifiedData && (
+            <p className="col-span-full text-sm text-muted-foreground">Verified market data is unavailable right now.</p>
+          )}
           {filtered.map(renderCard)}
           {filtered.length === 0 && (
             <p className="col-span-full text-sm text-muted-foreground">No stocks match "{query}".</p>
@@ -110,6 +114,9 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
             </header>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
               {topBuy.map(renderCard)}
+              {showNoVerifiedData && (
+                <p className="col-span-full text-sm text-muted-foreground">Waiting for verified buy-side market movers.</p>
+              )}
             </div>
           </section>
           <section className="rounded-lg border border-chart-down/30 bg-chart-down/5 p-3">
@@ -120,6 +127,9 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
             </header>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
               {topSell.map(renderCard)}
+              {showNoVerifiedData && (
+                <p className="col-span-full text-sm text-muted-foreground">Waiting for verified sell-side market movers.</p>
+              )}
             </div>
           </section>
         </div>

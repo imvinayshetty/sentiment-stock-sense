@@ -12,7 +12,7 @@ const STOCK_TOKENS: Record<string, { name: string; yahooSymbol: string }> = {
   HDFCBANK: { name: "HDFC Bank Ltd.", yahooSymbol: "HDFCBANK.NS" },
   ICICIBANK: { name: "ICICI Bank Ltd.", yahooSymbol: "ICICIBANK.NS" },
   WIPRO: { name: "Wipro Ltd.", yahooSymbol: "WIPRO.NS" },
-  TATAMOTORS: { name: "Tata Motors Ltd.", yahooSymbol: "TATAMOTORS.NS" },
+  TATAMOTORS: { name: "Tata Motors Ltd.", yahooSymbol: "TATAMOTOR.NS" },
   SBIN: { name: "State Bank of India", yahooSymbol: "SBIN.NS" },
   BAJFINANCE: { name: "Bajaj Finance Ltd.", yahooSymbol: "BAJFINANCE.NS" },
   ITC: { name: "ITC Ltd.", yahooSymbol: "ITC.NS" },
