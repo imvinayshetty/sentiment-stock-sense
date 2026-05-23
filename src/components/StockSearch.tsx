@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, TrendingUp, TrendingDown } from "lucide-react";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
@@ -23,10 +23,13 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const [query, setQuery] = useState("");
   const { data: quotes, isLoading } = useStockQuotes();
   const liveStocks = quotes?.data ?? [];
-  // Always search across the full directory; merge in live values when available.
   const directory = getStockDirectory();
-  const liveMap = new Map(liveStocks.map((s) => [s.symbol, s]));
-  const stocks: StockQuote[] = directory.map((d) => liveMap.get(d.symbol) ?? d);
+  const stocks = useMemo<StockQuote[]>(() => {
+    const liveMap = new Map(liveStocks.map((s) => [s.symbol, s]));
+    return directory
+      .map((entry) => liveMap.get(entry.symbol))
+      .filter((stock): stock is StockQuote => Boolean(stock));
+  }, [directory, liveStocks]);
 
   const q = query.trim().toLowerCase();
   const filtered = q

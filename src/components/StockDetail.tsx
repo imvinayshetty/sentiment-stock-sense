@@ -1,5 +1,5 @@
 import { useStockQuotes } from "@/hooks/useAngelOneData";
-import { getStock } from "@/lib/stockData";
+import { getStockMeta } from "@/lib/stockData";
 import { ArrowUpRight, ArrowDownRight, BarChart3, DollarSign, Activity, TrendingUp, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 
 interface StockDetailProps {
@@ -9,8 +9,27 @@ interface StockDetailProps {
 const StockDetail = ({ symbol }: StockDetailProps) => {
   const { data: quotes } = useStockQuotes();
   const liveStock = quotes?.data?.find((s) => s.symbol === symbol);
-  const stock = liveStock || getStock(symbol);
-  if (!stock) return null;
+  const stockMeta = getStockMeta(symbol);
+  const stock = liveStock;
+  if (!stock) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-5 card-glow">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-bold text-foreground">{symbol}</h2>
+              <span className="rounded-md bg-secondary px-2 py-0.5 text-xs text-muted-foreground">NSE</span>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">{stockMeta?.name ?? "Waiting for verified market data"}</p>
+          </div>
+          <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">No verified price</span>
+        </div>
+        <p className="mt-5 text-sm text-muted-foreground">
+          Live backend data is required before this stock can be shown.
+        </p>
+      </div>
+    );
+  }
 
   const isUp = stock.change >= 0;
 
