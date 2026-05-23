@@ -1,6 +1,6 @@
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStock } from "@/lib/stockData";
-import { ArrowUpRight, ArrowDownRight, BarChart3, DollarSign, Activity, TrendingUp } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, BarChart3, DollarSign, Activity, TrendingUp, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 
 interface StockDetailProps {
   symbol: string;
@@ -14,10 +14,16 @@ const StockDetail = ({ symbol }: StockDetailProps) => {
 
   const isUp = stock.change >= 0;
 
+  // Recommended intraday levels: sell near the day's high, buy near the day's low.
+  const recommendedSell = stock.high;
+  const recommendedBuy = stock.low;
+
   const stats = [
     { label: "Open", value: `₹${stock.open.toFixed(2)}`, icon: DollarSign },
     { label: "High", value: `₹${stock.high.toFixed(2)}`, icon: TrendingUp },
     { label: "Low", value: `₹${stock.low.toFixed(2)}`, icon: Activity },
+    { label: "Rec. Sell", value: `₹${recommendedSell.toFixed(2)}`, icon: ArrowUpCircle },
+    { label: "Rec. Buy", value: `₹${recommendedBuy.toFixed(2)}`, icon: ArrowDownCircle },
     { label: "Volume", value: stock.volume, icon: BarChart3 },
     { label: "Exchange", value: stock.exchange || "NSE", icon: DollarSign },
   ];
@@ -46,7 +52,7 @@ const StockDetail = ({ symbol }: StockDetailProps) => {
           </div>
         </div>
       </div>
-      <div className="mt-5 grid grid-cols-5 gap-3">
+      <div className="mt-5 grid grid-cols-4 gap-3 lg:grid-cols-7">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-lg bg-secondary/50 p-3 text-center">
             <stat.icon className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
