@@ -43,8 +43,8 @@ export function useStockQuotes() {
         source: result.source ?? "live",
       };
     },
-    refetchInterval: 120000,
-    staleTime: 90000,
+    refetchInterval: 45000,
+    staleTime: 30000,
     retry: 1,
   });
 }
