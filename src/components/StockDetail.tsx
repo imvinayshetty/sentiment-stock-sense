@@ -9,6 +9,7 @@ interface StockDetailProps {
 const StockDetail = ({ symbol }: StockDetailProps) => {
   const { data: quotes } = useStockQuotes();
   const liveStock = quotes?.data?.find((s) => s.symbol === symbol);
+  const marketOpen = quotes?.marketStatus === "OPEN";
   const stockMeta = getStockMeta(symbol);
   const stock = liveStock;
   if (!stock) {
@@ -54,7 +55,7 @@ const StockDetail = ({ symbol }: StockDetailProps) => {
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-foreground">{stock.symbol}</h2>
             <span className="rounded-md bg-secondary px-2 py-0.5 text-xs text-muted-foreground">NSE</span>
-            {liveStock && (
+            {liveStock && marketOpen && (
               <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                 LIVE
