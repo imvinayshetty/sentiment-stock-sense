@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useQueryClient } from "@tanstack/react-query";
 import TickerBar from "@/components/TickerBar";
 import StockSearch from "@/components/StockSearch";
 import StockDetail from "@/components/StockDetail";
@@ -11,9 +13,15 @@ import { useStockQuotes } from "@/hooks/useAngelOneData";
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
-  const { data: quotes } = useStockQuotes();
+  const { data: quotes, isFetching, refetch } = useStockQuotes();
+  const queryClient = useQueryClient();
   const marketOpen = quotes?.marketStatus === "OPEN";
   const istTime = quotes?.istTime;
+
+  const handleRefresh = () => {
+    refetch();
+    queryClient.invalidateQueries({ queryKey: ["historical", selectedSymbol] });
+  };
 
   return (
     <div className="min-h-screen bg-background gradient-mesh">
@@ -30,6 +38,16 @@ const Index = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={isFetching}
+              className="h-7 gap-1.5 text-xs"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh quotes
+            </Button>
             <span
               className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
                 marketOpen
