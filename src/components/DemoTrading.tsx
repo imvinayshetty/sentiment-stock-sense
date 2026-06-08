@@ -119,6 +119,32 @@ const DemoTrading = () => {
     setQuery("");
   };
 
+  // Position the search dropdown with fixed coordinates so it is not clipped
+  // by the table's horizontal-scroll (overflow) container.
+  useLayoutEffect(() => {
+    if (!query) {
+      setDropdownPos(null);
+      return;
+    }
+    const update = () => {
+      const el = searchRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setDropdownPos({
+        left: rect.left,
+        top: rect.bottom + 4,
+        width: rect.width,
+      });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [query]);
+
   const handleTopUp = () => {
     const amount = Number(topUp);
     if (!amount || amount <= 0) return;
