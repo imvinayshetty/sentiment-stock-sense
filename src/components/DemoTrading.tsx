@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Search, ArrowDownCircle, ArrowUpCircle, Wallet } from "lucide-react";
+import {
+  Search,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Wallet,
+  PlusCircle,
+} from "lucide-react";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
@@ -14,11 +20,23 @@ interface Trade {
   time: string;
 }
 
+interface Holding {
+  symbol: string;
+  name: string;
+  quantity: number;
+  avgPrice: number;
+}
+
+const MAX_BALANCE = 100000;
+
 const DemoTrading = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<StockQuote | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [quantity, setQuantity] = useState(1);
+  const [balance, setBalance] = useState(0);
+  const [topUp, setTopUp] = useState("");
+  const [holdings, setHoldings] = useState<Record<string, Holding>>({});
   const { data: quotes, isLoading } = useStockQuotes();
   const { toast } = useToast();
 
@@ -31,6 +49,11 @@ const DemoTrading = () => {
       .map((entry) => liveMap.get(entry.symbol))
       .filter((stock): stock is StockQuote => Boolean(stock));
   }, [directory, liveStocks]);
+
+  const priceMap = useMemo(
+    () => new Map(stocks.map((s) => [s.symbol, s.price])),
+    [stocks],
+  );
 
   // Keep the selected stock's price in sync with live quotes
   const liveSelected = selected
@@ -53,10 +76,72 @@ const DemoTrading = () => {
     setQuery("");
   };
 
+  const handleTopUp = () => {
+    const amount = Number(topUp);
+    if (!amount || amount <= 0) return;
+    const next = Math.min(MAX_BALANCE, balance + amount);
+    setBalance(next);
+    setTopUp("");
+    toast({
+      title: "Balance topped up (demo)",
+      description: `Added ₹${(next - balance).toFixed(2)} · Balance ₹${next.toFixed(2)}`,
+    });
+  };
+
   const handleTrade = (side: "BUY" | "SELL") => {
     if (!liveSelected) return;
     const qty = Math.max(1, Math.floor(quantity) || 1);
     const total = liveSelected.price * qty;
+
+    if (side === "BUY") {
+      if (total > balance) {
+        toast({
+          title: "Insufficient balance",
+          description: `Need ₹${total.toFixed(2)}, available ₹${balance.toFixed(2)}. Top up first.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      setBalance((b) => b - total);
+      setHoldings((prev) => {
+        const existing = prev[liveSelected.symbol];
+        const newQty = (existing?.quantity ?? 0) + qty;
+        const newAvg = existing
+          ? (existing.avgPrice * existing.quantity + total) / newQty
+          : liveSelected.price;
+        return {
+          ...prev,
+          [liveSelected.symbol]: {
+            symbol: liveSelected.symbol,
+            name: liveSelected.name,
+            quantity: newQty,
+            avgPrice: newAvg,
+          },
+        };
+      });
+    } else {
+      const existing = holdings[liveSelected.symbol];
+      if (!existing || existing.quantity < qty) {
+        toast({
+          title: "Not enough holdings",
+          description: `You hold ${existing?.quantity ?? 0} ${liveSelected.symbol}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      setBalance((b) => Math.min(MAX_BALANCE, b + total));
+      setHoldings((prev) => {
+        const remaining = existing.quantity - qty;
+        const next = { ...prev };
+        if (remaining <= 0) {
+          delete next[liveSelected.symbol];
+        } else {
+          next[liveSelected.symbol] = { ...existing, quantity: remaining };
+        }
+        return next;
+      });
+    }
+
     const trade: Trade = {
       id: crypto.randomUUID(),
       symbol: liveSelected.symbol,
@@ -77,6 +162,8 @@ const DemoTrading = () => {
     });
   };
 
+  const holdingsList = Object.values(holdings);
+
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <header className="mb-4 flex items-center gap-2">
@@ -86,6 +173,37 @@ const DemoTrading = () => {
           Practice buy/sell with live NSE prices · no real money
         </span>
       </header>
+
+      {/* Balance + Top up */}
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-secondary/30 p-3">
+        <div>
+          <div className="text-xs text-muted-foreground">Available balance</div>
+          <div className="font-mono text-lg font-bold text-foreground">
+            ₹{balance.toFixed(2)}
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={MAX_BALANCE}
+            placeholder="Amount"
+            value={topUp}
+            onChange={(e) => setTopUp(e.target.value)}
+            className="w-28 rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <button
+            onClick={handleTopUp}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/20"
+          >
+            <PlusCircle className="h-4 w-4" />
+            Top up
+          </button>
+        </div>
+        <p className="w-full text-[11px] text-muted-foreground">
+          Max balance ₹{MAX_BALANCE.toLocaleString("en-IN")}
+        </p>
+      </div>
 
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
