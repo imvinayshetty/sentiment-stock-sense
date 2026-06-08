@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Search,
   ArrowDownCircle,
   ArrowUpCircle,
   Wallet,
   PlusCircle,
+  RotateCcw,
 } from "lucide-react";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
@@ -28,17 +29,53 @@ interface Holding {
 }
 
 const MAX_BALANCE = 100000;
+const STORAGE_KEY = "demo-trading-state";
+
+function loadState<T>(key: string, fallback: T): T {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return fallback;
+    const parsed = JSON.parse(saved);
+    return key in parsed ? (parsed[key] as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const DemoTrading = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<StockQuote | null>(null);
-  const [trades, setTrades] = useState<Trade[]>([]);
+  const [trades, setTrades] = useState<Trade[]>(() => loadState("trades", []));
   const [quantity, setQuantity] = useState(1);
-  const [balance, setBalance] = useState(0);
+  const [balance, setBalance] = useState(() => loadState("balance", 0));
   const [topUp, setTopUp] = useState("");
-  const [holdings, setHoldings] = useState<Record<string, Holding>>({});
+  const [holdings, setHoldings] = useState<Record<string, Holding>>(() =>
+    loadState("holdings", {}),
+  );
   const { data: quotes, isLoading } = useStockQuotes();
   const { toast } = useToast();
+
+  // Persist demo trading data so it survives refreshes
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ trades, balance, holdings }),
+    );
+  }, [trades, balance, holdings]);
+
+  const handleReset = () => {
+    setTrades([]);
+    setBalance(0);
+    setHoldings({});
+    setSelected(null);
+    setQuantity(1);
+    setTopUp("");
+    localStorage.removeItem(STORAGE_KEY);
+    toast({
+      title: "Demo trading reset",
+      description: "Balance, holdings and order history cleared.",
+    });
+  };
 
   const liveStocks = quotes?.data ?? [];
   const directory = getStockDirectory();
@@ -169,9 +206,16 @@ const DemoTrading = () => {
       <header className="mb-4 flex items-center gap-2">
         <Wallet className="h-4 w-4 text-primary" />
         <h2 className="text-sm font-semibold text-foreground">Demo Trading</h2>
-        <span className="ml-auto text-xs text-muted-foreground">
+        <span className="ml-auto hidden text-xs text-muted-foreground sm:inline">
           Practice buy/sell with live NSE prices · no real money
         </span>
+        <button
+          onClick={handleReset}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground sm:ml-3"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Reset
+        </button>
       </header>
 
       {/* Balance + Top up */}
