@@ -9,6 +9,8 @@ interface Trade {
   symbol: string;
   side: "BUY" | "SELL";
   price: number;
+  quantity: number;
+  total: number;
   time: string;
 }
 
@@ -16,6 +18,7 @@ const DemoTrading = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<StockQuote | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [quantity, setQuantity] = useState(1);
   const { data: quotes, isLoading } = useStockQuotes();
   const { toast } = useToast();
 
@@ -52,11 +55,15 @@ const DemoTrading = () => {
 
   const handleTrade = (side: "BUY" | "SELL") => {
     if (!liveSelected) return;
+    const qty = Math.max(1, Math.floor(quantity) || 1);
+    const total = liveSelected.price * qty;
     const trade: Trade = {
       id: crypto.randomUUID(),
       symbol: liveSelected.symbol,
       side,
       price: liveSelected.price,
+      quantity: qty,
+      total,
       time: new Date().toLocaleTimeString("en-IN", {
         hour: "2-digit",
         minute: "2-digit",
@@ -66,7 +73,7 @@ const DemoTrading = () => {
     setTrades((prev) => [trade, ...prev].slice(0, 50));
     toast({
       title: `${side} order placed (demo)`,
-      description: `${liveSelected.symbol} @ ₹${liveSelected.price.toFixed(2)}`,
+      description: `${qty} × ${liveSelected.symbol} @ ₹${liveSelected.price.toFixed(2)} = ₹${total.toFixed(2)}`,
     });
   };
 
@@ -86,6 +93,7 @@ const DemoTrading = () => {
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
               <th className="py-2 pr-4 font-medium">Stock</th>
               <th className="py-2 pr-4 font-medium">Current Price</th>
+              <th className="py-2 pr-4 font-medium">Quantity</th>
               <th className="py-2 pr-4 font-medium">Buy</th>
               <th className="py-2 font-medium">Sell</th>
             </tr>
@@ -164,6 +172,18 @@ const DemoTrading = () => {
                 )}
               </td>
 
+              {/* Quantity column */}
+              <td className="py-3 pr-4">
+                <input
+                  type="number"
+                  min={1}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  disabled={!liveSelected}
+                  className="w-20 rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
+                />
+              </td>
+
               {/* Buy column */}
               <td className="py-3 pr-4">
                 <button
@@ -214,7 +234,10 @@ const DemoTrading = () => {
                   {t.symbol}
                 </span>
                 <span className="font-mono text-foreground">
-                  ₹{t.price.toFixed(2)}
+                  {t.quantity} × ₹{t.price.toFixed(2)}
+                </span>
+                <span className="font-mono font-semibold text-foreground">
+                  = ₹{t.total.toFixed(2)}
                 </span>
                 <span className="ml-auto font-mono text-muted-foreground">
                   {t.time}
