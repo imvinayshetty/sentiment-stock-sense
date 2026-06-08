@@ -330,6 +330,68 @@ const DemoTrading = () => {
         </table>
       </div>
 
+      {holdingsList.length > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
+            Your Holdings (demo)
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <th className="py-2 pr-4 font-medium">Stock</th>
+                  <th className="py-2 pr-4 font-medium">Qty</th>
+                  <th className="py-2 pr-4 font-medium">Purchased Value</th>
+                  <th className="py-2 pr-4 font-medium">Current Value</th>
+                  <th className="py-2 font-medium">P/L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {holdingsList.map((h) => {
+                  const livePrice = priceMap.get(h.symbol) ?? h.avgPrice;
+                  const purchased = h.avgPrice * h.quantity;
+                  const current = livePrice * h.quantity;
+                  const pl = current - purchased;
+                  const plPct = purchased > 0 ? (pl / purchased) * 100 : 0;
+                  const up = pl >= 0;
+                  return (
+                    <tr key={h.symbol} className="border-b border-border">
+                      <td className="py-2 pr-4">
+                        <span className="font-mono font-bold text-foreground">
+                          {h.symbol}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-foreground">
+                        {h.quantity}
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-foreground">
+                        ₹{purchased.toFixed(2)}
+                      </td>
+                      <td
+                        className={`py-2 pr-4 font-mono font-semibold ${
+                          up ? "text-chart-up" : "text-chart-down"
+                        }`}
+                      >
+                        ₹{current.toFixed(2)}
+                      </td>
+                      <td
+                        className={`py-2 font-mono ${
+                          up ? "text-chart-up" : "text-chart-down"
+                        }`}
+                      >
+                        {up ? "+" : ""}
+                        ₹{pl.toFixed(2)} ({up ? "+" : ""}
+                        {plPct.toFixed(2)}%)
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {trades.length > 0 && (
         <div className="mt-4">
           <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
