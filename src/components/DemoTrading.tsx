@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   ArrowDownCircle,
@@ -45,6 +45,12 @@ function loadState<T>(key: string, fallback: T): T {
 const DemoTrading = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<StockQuote | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState<{
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
   const [trades, setTrades] = useState<Trade[]>(() => loadState("trades", []));
   const [quantity, setQuantity] = useState(1);
   const [balance, setBalance] = useState(() => loadState("balance", 0));
