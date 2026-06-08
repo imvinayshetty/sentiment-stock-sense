@@ -100,14 +100,14 @@ const Index = () => {
           <PriceTarget symbol={selectedSymbol} />
         </div>
 
-        {/* News */}
+        {/* Demo Trading */}
         <div className="animate-fade-in-up" style={{ animationDelay: "400ms" }}>
-          <NewsFeed />
+          <DemoTrading />
         </div>
 
-        {/* Demo Trading */}
+        {/* News */}
         <div className="animate-fade-in-up" style={{ animationDelay: "450ms" }}>
-          <DemoTrading />
+          <NewsFeed />
         </div>
       </main>
 
