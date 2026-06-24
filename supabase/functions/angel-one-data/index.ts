@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -52,6 +53,193 @@ const STOCK_TOKENS: Record<string, { name: string; yahooSymbol: string }> = {
   APOLLOHOSP: { name: "Apollo Hospitals", yahooSymbol: "APOLLOHOSP.NS" },
   BPCL: { name: "Bharat Petroleum", yahooSymbol: "BPCL.NS" },
 };
+
+// Angel One SmartAPI NSE equity instrument tokens (used for live quotes during market hours).
+const ANGEL_TOKENS: Record<string, string> = {
+  RELIANCE: "2885", TCS: "11536", INFY: "1594", HDFCBANK: "1333", ICICIBANK: "4963",
+  WIPRO: "3787", TATAMOTORS: "3456", SBIN: "3045", BAJFINANCE: "317", ITC: "1660",
+  HINDUNILVR: "1394", KOTAKBANK: "1922", LT: "11483", AXISBANK: "5900", MARUTI: "10999",
+  ASIANPAINT: "236", SUNPHARMA: "3351", TITAN: "3506", ULTRACEMCO: "11532", NESTLEIND: "17963",
+  BHARTIARTL: "10604", HCLTECH: "7229", TECHM: "13538", POWERGRID: "14977", NTPC: "11630",
+  ONGC: "2475", COALINDIA: "20374", JSWSTEEL: "11723", TATASTEEL: "3499", HINDALCO: "1363",
+  ADANIPORTS: "15083", BAJAJFINSV: "16675", DRREDDY: "881", CIPLA: "694", DIVISLAB: "10940",
+  GRASIM: "1232", EICHERMOT: "910", HEROMOTOCO: "1348", M_M: "2031", BRITANNIA: "547",
+  INDUSINDBK: "5258", TATACONSUM: "3432", UPL: "11287", APOLLOHOSP: "157", BPCL: "526",
+};
+const TOKEN_TO_SYMBOL: Record<string, string> = Object.fromEntries(
+  Object.entries(ANGEL_TOKENS).map(([sym, tok]) => [tok, sym]),
+);
+
+function getSupabase() {
+  return createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+}
+
+// ---------- Angel One SmartAPI (live quotes) ----------
+function base32Decode(input: string): Uint8Array {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const clean = input.replace(/=+$/, "").toUpperCase().replace(/\s/g, "");
+  let bits = "";
+  for (const c of clean) {
+    const val = alphabet.indexOf(c);
+    if (val < 0) continue;
+    bits += val.toString(2).padStart(5, "0");
+  }
+  const bytes: number[] = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  return new Uint8Array(bytes);
+}
+
+async function generateTotp(secret: string): Promise<string> {
+  const key = base32Decode(secret);
+  const counter = Math.floor(Date.now() / 1000 / 30);
+  const buf = new ArrayBuffer(8);
+  new DataView(buf).setUint32(4, counter);
+  const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, buf));
+  const offset = sig[sig.length - 1] & 0xf;
+  const code = ((sig[offset] & 0x7f) << 24) | ((sig[offset + 1] & 0xff) << 16) |
+    ((sig[offset + 2] & 0xff) << 8) | (sig[offset + 3] & 0xff);
+  return (code % 1_000_000).toString().padStart(6, "0");
+}
+
+async function fetchAngelQuotes() {
+  const apiKey = Deno.env.get("ANGEL_ONE_API_KEY");
+  const clientId = Deno.env.get("ANGEL_ONE_CLIENT_ID");
+  const mpin = Deno.env.get("ANGEL_ONE_PASSWORD");
+  const totpSecret = Deno.env.get("ANGEL_ONE_TOTP_SECRET");
+  if (!apiKey || !clientId || !mpin || !totpSecret) throw new Error("Angel One credentials missing");
+
+  const otp = await generateTotp(totpSecret);
+  const baseHeaders: Record<string, string> = {
+    "Content-Type": "application/json", "Accept": "application/json",
+    "X-UserType": "USER", "X-SourceID": "WEB", "X-ClientLocalIP": "127.0.0.1",
+    "X-ClientPublicIP": "127.0.0.1", "X-MACAddress": "00:00:00:00:00:00", "X-PrivateKey": apiKey,
+  };
+
+  const loginRes = await fetch(
+    "https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword",
+    { method: "POST", headers: baseHeaders, body: JSON.stringify({ clientcode: clientId, password: mpin, totp: otp }) },
+  );
+  const loginData = await loginRes.json();
+  const jwt = loginData?.data?.jwtToken;
+  if (!jwt) throw new Error(`Angel One login failed: ${JSON.stringify(loginData?.message ?? loginData)}`);
+
+  const quoteRes = await fetch(
+    "https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/",
+    {
+      method: "POST",
+      headers: { ...baseHeaders, Authorization: `Bearer ${jwt}` },
+      body: JSON.stringify({ mode: "FULL", exchangeTokens: { NSE: Object.values(ANGEL_TOKENS) } }),
+    },
+  );
+  const quoteData = await quoteRes.json();
+  const fetched: any[] = quoteData?.data?.fetched ?? [];
+  if (!fetched.length) throw new Error(`Angel One quote empty: ${JSON.stringify(quoteData?.message ?? quoteData)}`);
+
+  return fetched.map((f) => {
+    const symbol = TOKEN_TO_SYMBOL[String(f.symbolToken)];
+    const info = STOCK_TOKENS[symbol];
+    if (!symbol || !info) return null;
+    const price = Number(f.ltp ?? 0);
+    const prevClose = Number(f.close ?? price);
+    if (!price) return null;
+    const change = Number((price - prevClose).toFixed(2));
+    const changePercent = Number((prevClose ? (change / prevClose) * 100 : 0).toFixed(2));
+    return {
+      symbol,
+      name: info.name,
+      price: Number(price.toFixed(2)),
+      change,
+      changePercent,
+      volume: formatVolume(Number(f.tradeVolume ?? 0)),
+      high: Number(Number(f.high ?? price).toFixed(2)),
+      low: Number(Number(f.low ?? price).toFixed(2)),
+      open: Number(Number(f.open ?? prevClose).toFixed(2)),
+      close: Number(prevClose.toFixed(2)),
+      exchange: "NSE",
+      marketTime: Math.floor(Date.now() / 1000),
+    };
+  }).filter((q): q is NonNullable<typeof q> => Boolean(q) && q.price > 0);
+}
+
+// ---------- Forecast (SES + linear regression) ----------
+function linearRegression(y: number[]): { slope: number; intercept: number } {
+  const n = y.length;
+  const xMean = (n - 1) / 2;
+  const yMean = y.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (i - xMean) * (y[i] - yMean);
+    den += (i - xMean) ** 2;
+  }
+  const slope = den ? num / den : 0;
+  return { slope, intercept: yMean - slope * xMean };
+}
+
+function computeForecast(closes: number[]) {
+  if (closes.length < 5) return null;
+  const window = closes.slice(-30);
+  const n = window.length;
+
+  // Simple Exponential Smoothing
+  let s = window[0];
+  for (const c of window) s = 0.3 * c + 0.7 * s;
+
+  // Linear regression trend
+  const { slope, intercept } = linearRegression(window);
+
+  // Daily log-return volatility
+  const rets: number[] = [];
+  for (let i = 1; i < window.length; i++) if (window[i - 1] > 0) rets.push(Math.log(window[i] / window[i - 1]));
+  const rMean = rets.reduce((a, b) => a + b, 0) / (rets.length || 1);
+  const sigma = Math.sqrt(rets.reduce((a, b) => a + (b - rMean) ** 2, 0) / (rets.length || 1)) || 0.015;
+
+  const lastPrice = window[n - 1];
+  const today = new Date();
+  const out = [];
+  for (let i = 1; i <= 7; i++) {
+    const linPred = intercept + slope * (n - 1 + i);
+    const forecast = 0.6 * linPred + 0.4 * s;
+    const band = forecast * sigma * Math.sqrt(i);
+    const d = new Date(today);
+    d.setDate(d.getDate() + i);
+    out.push({
+      date: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+      isoDate: d.toISOString().slice(0, 10),
+      forecast: Number(forecast.toFixed(2)),
+      lower: Number((forecast - band).toFixed(2)),
+      upper: Number((forecast + band).toFixed(2)),
+    });
+  }
+  return { lastPrice, sigma, forecast: out };
+}
+
+function isoToCloseMap(candles: any[]): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const c of candles) map[String(c[0]).slice(0, 10)] = Number(c[4]);
+  return map;
+}
+
+async function reconcileBacktest(supabase: any, symbol: string, candles: any[]) {
+  const closeByDate = isoToCloseMap(candles);
+  const isoDates = Object.keys(closeByDate).sort();
+  const { data: pending } = await supabase
+    .from("prediction_log").select("*").eq("symbol", symbol).is("actual_price", null);
+  if (!pending?.length) return;
+  for (const row of pending) {
+    // find the first available close on/after the horizon date
+    const target = isoDates.find((d) => d >= row.horizon_date);
+    if (!target) continue;
+    const actual = closeByDate[target];
+    const wentUp = actual > Number(row.base_price);
+    const correct = (row.direction === "up") === wentUp;
+    await supabase.from("prediction_log")
+      .update({ actual_price: actual, correct }).eq("id", row.id);
+  }
+}
 
 function getMarketStatus(timestampSeconds?: number): { status: "OPEN" | "CLOSED"; istTime: string } {
   const now = timestampSeconds ? new Date(timestampSeconds * 1000) : new Date();
@@ -172,8 +360,22 @@ serve(async (req) => {
     const symbol = url.searchParams.get("symbol")?.toUpperCase();
 
     if (action === "quotes") {
-      const entries = Object.entries(STOCK_TOKENS);
-      const results = await Promise.all(
+      const market = getMarketStatus();
+      let data: any[] = [];
+
+      // During market hours, prefer Angel One live quotes; fall back to Yahoo on any failure.
+      if (market.status === "OPEN") {
+        try {
+          data = await fetchAngelQuotes();
+        } catch (error) {
+          console.error("Angel One quotes failed, falling back to Yahoo:", error);
+          data = [];
+        }
+      }
+
+      if (!data.length) {
+        const entries = Object.entries(STOCK_TOKENS);
+        const results = await Promise.all(
         entries.map(async ([stockSymbol, info]) => {
           try {
             const chart = await fetchChart(info.yahooSymbol, "5d", "1d");
@@ -183,14 +385,14 @@ serve(async (req) => {
             return null;
           }
         }),
-      );
+        );
+        data = results.filter((item): item is NonNullable<typeof item> => Boolean(item) && item.price > 0);
+      }
 
-      const data = results.filter((item): item is NonNullable<typeof item> => Boolean(item) && item.price > 0);
       const mostRecentTime = data.reduce<number | undefined>((latest, item: any) => {
         if (!item?.marketTime) return latest;
         return latest ? Math.max(latest, item.marketTime) : item.marketTime;
       }, undefined);
-      const market = getMarketStatus();
       const istTime = mostRecentTime ? getMarketStatus(mostRecentTime).istTime : market.istTime;
 
       return new Response(JSON.stringify({
@@ -215,6 +417,65 @@ serve(async (req) => {
 
       const chart = await fetchChart(stockInfo.yahooSymbol, "1mo", "1d");
       return new Response(JSON.stringify({ success: true, data: mapHistorical(chart) }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "forecast" && symbol) {
+      const stockInfo = STOCK_TOKENS[symbol];
+      if (!stockInfo) {
+        return new Response(JSON.stringify({ success: false, error: "Unknown symbol" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const chart = await fetchChart(stockInfo.yahooSymbol, "3mo", "1d");
+      const candles = mapHistorical(chart);
+      const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
+      const result = computeForecast(closes);
+      if (!result) {
+        return new Response(JSON.stringify({ success: false, error: "Not enough data" }), {
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Log this prediction and reconcile past predictions for backtesting.
+      try {
+        const supabase = getSupabase();
+        const day7 = result.forecast[result.forecast.length - 1];
+        const today = new Date().toISOString().slice(0, 10);
+        await supabase.from("prediction_log").upsert({
+          symbol,
+          predicted_at: today,
+          horizon_date: day7.isoDate,
+          base_price: result.lastPrice,
+          predicted_price: day7.forecast,
+          direction: day7.forecast >= result.lastPrice ? "up" : "down",
+        }, { onConflict: "symbol,predicted_at,horizon_date", ignoreDuplicates: true });
+        await reconcileBacktest(supabase, symbol, candles);
+      } catch (e) {
+        console.error("Prediction logging failed:", e);
+      }
+
+      return new Response(JSON.stringify({ success: true, ...result }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "backtest") {
+      const supabase = getSupabase();
+      let query = supabase.from("prediction_log").select("*").not("correct", "is", null);
+      if (symbol) query = query.eq("symbol", symbol);
+      const { data: rows } = await query;
+      const evaluated = rows ?? [];
+      const correct = evaluated.filter((r: any) => r.correct).length;
+      const accuracy = evaluated.length ? Math.round((correct / evaluated.length) * 100) : null;
+      return new Response(JSON.stringify({
+        success: true,
+        evaluated: evaluated.length,
+        correct,
+        directionalAccuracy: accuracy,
+        recent: evaluated.slice(-10).reverse(),
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

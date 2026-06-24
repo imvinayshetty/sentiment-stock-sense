@@ -1,8 +1,6 @@
 import { useMemo } from "react";
 import { Target, TrendingUp, TrendingDown } from "lucide-react";
-import { useHistoricalData } from "@/hooks/useAngelOneData";
-import { useStockQuotes } from "@/hooks/useAngelOneData";
-import { getSentimentScore } from "@/lib/stockData";
+import { useHistoricalData, useStockQuotes, useNewsSentiment } from "@/hooks/useAngelOneData";
 
 interface PriceTargetProps {
   symbol: string;
@@ -25,7 +23,9 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
   const { data: quotes } = useStockQuotes();
   const liveStock = quotes?.data?.find((s) => s.symbol === symbol);
   const stock = liveStock;
-  const { score, label } = getSentimentScore(symbol);
+  const { data: sentiment } = useNewsSentiment(symbol);
+  const score = sentiment?.score ?? 50;
+  const label = sentiment?.label ?? "Neutral";
 
   const projections = useMemo(() => {
     if (!stock) return null;

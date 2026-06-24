@@ -2,3 +2,6 @@ project_id = "vqnbopeerpicqwblcvqt"
 
 [functions.angel-one-data]
 verify_jwt = false
+
+[functions.news-sentiment]
+verify_jwt = false

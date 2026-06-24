@@ -1,4 +1,4 @@
-import { getSentimentScore } from "@/lib/stockData";
+import { useNewsSentiment } from "@/hooks/useAngelOneData";
 import { ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 
 interface SentimentGaugeProps {
@@ -6,7 +6,28 @@ interface SentimentGaugeProps {
 }
 
 const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
-  const { score, label, tweets } = getSentimentScore(symbol);
+  const { data, isLoading, isError } = useNewsSentiment(symbol);
+  const score = data?.score ?? 50;
+  const label = data?.label ?? "Neutral";
+  const tweets = data?.buzz ?? 0;
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-5 card-glow">
+        <h3 className="mb-4 text-lg font-semibold text-foreground">Sentiment Analysis</h3>
+        <p className="text-sm text-muted-foreground">Analyzing latest news…</p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-5 card-glow">
+        <h3 className="mb-4 text-lg font-semibold text-foreground">Sentiment Analysis</h3>
+        <p className="text-sm text-muted-foreground">Live sentiment is unavailable right now.</p>
+      </div>
+    );
+  }
 
   const getColor = () => {
     if (score >= 65) return "text-chart-up";
@@ -64,9 +85,9 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
             {label}
           </div>
           <p className="text-sm text-muted-foreground">
-            Based on <span className="font-mono text-foreground">{tweets.toLocaleString()}</span> social mentions
+            Based on <span className="font-mono text-foreground">{tweets.toLocaleString()}</span> recent news articles
           </p>
-          <p className="text-xs text-muted-foreground">Powered by NLP sentiment analysis</p>
+          <p className="text-xs text-muted-foreground">Powered by Google News + AI sentiment scoring</p>
         </div>
       </div>
       <div className={`mt-5 flex items-start gap-3 rounded-lg border p-3 ${recommendation.bg}`}>
