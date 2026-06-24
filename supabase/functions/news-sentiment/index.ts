@@ -53,19 +53,62 @@ function timeAgo(pubDate: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-async function fetchGoogleNews(query: string): Promise<{ title: string; source: string; time: string; link: string }[]> {
-  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query + " stock NSE")}&hl=en-IN&gl=IN&ceid=IN:en`;
-  const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-  if (!res.ok) throw new Error(`Google News RSS failed (${res.status})`);
-  const xml = await res.text();
-  const items = xml.split("<item>").slice(1, 13);
+type RawArticle = { title: string; source: string; time: string; link: string };
+
+function parseRss(xml: string, defaultSource: string): RawArticle[] {
+  const items = xml.split(/<item>/i).slice(1, 13);
   return items.map((item) => {
     const title = decodeEntities((item.match(/<title>(.*?)<\/title>/s)?.[1]) ?? "");
     const link = decodeEntities((item.match(/<link>(.*?)<\/link>/s)?.[1]) ?? "");
     const pubDate = (item.match(/<pubDate>(.*?)<\/pubDate>/s)?.[1]) ?? "";
-    const source = decodeEntities((item.match(/<source[^>]*>(.*?)<\/source>/s)?.[1]) ?? "Google News");
+    const source = decodeEntities((item.match(/<source[^>]*>(.*?)<\/source>/s)?.[1]) ?? defaultSource);
     return { title, source, time: timeAgo(pubDate), link };
   }).filter((a) => a.title);
+}
+
+async function tryFetch(url: string): Promise<string | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+          "Accept": "application/rss+xml, application/xml, text/xml, */*",
+        },
+      });
+      if (res.ok) return await res.text();
+    } catch (_) { /* retry */ }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return null;
+}
+
+// Tries Google News RSS, then Yahoo Finance RSS, then Bing News RSS.
+async function fetchNews(query: string, symbol: string): Promise<RawArticle[]> {
+  const google = await tryFetch(
+    `https://news.google.com/rss/search?q=${encodeURIComponent(query + " stock NSE")}&hl=en-IN&gl=IN&ceid=IN:en`,
+  );
+  if (google) {
+    const parsed = parseRss(google, "Google News");
+    if (parsed.length) return parsed;
+  }
+
+  const yahoo = await tryFetch(
+    `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(symbol + ".NS")}&region=IN&lang=en-IN`,
+  );
+  if (yahoo) {
+    const parsed = parseRss(yahoo, "Yahoo Finance");
+    if (parsed.length) return parsed;
+  }
+
+  const bing = await tryFetch(
+    `https://www.bing.com/news/search?q=${encodeURIComponent(query + " stock NSE")}&format=RSS`,
+  );
+  if (bing) {
+    const parsed = parseRss(bing, "Bing News");
+    if (parsed.length) return parsed;
+  }
+
+  return [];
 }
 
 async function scoreWithGroq(apiKey: string, company: string, headlines: string[]): Promise<{ scores: number[]; overall: number }> {
@@ -131,7 +174,7 @@ serve(async (req) => {
     }
 
     const company = COMPANY_NAMES[symbol] || symbol;
-    const raw = await fetchGoogleNews(company);
+    const raw = await fetchNews(company, symbol);
 
     if (raw.length === 0) {
       const fallback = { symbol, score: 50, label: "Neutral", buzz: 0, articles: [] };
