@@ -14,7 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      prediction_log: {
+        Row: {
+          actual_price: number | null
+          base_price: number
+          correct: boolean | null
+          created_at: string
+          direction: string
+          horizon_date: string
+          id: string
+          predicted_at: string
+          predicted_price: number
+          symbol: string
+        }
+        Insert: {
+          actual_price?: number | null
+          base_price: number
+          correct?: boolean | null
+          created_at?: string
+          direction: string
+          horizon_date: string
+          id?: string
+          predicted_at: string
+          predicted_price: number
+          symbol: string
+        }
+        Update: {
+          actual_price?: number | null
+          base_price?: number
+          correct?: boolean | null
+          created_at?: string
+          direction?: string
+          horizon_date?: string
+          id?: string
+          predicted_at?: string
+          predicted_price?: number
+          symbol?: string
+        }
+        Relationships: []
+      }
+      sentiment_cache: {
+        Row: {
+          articles: Json
+          buzz: number
+          label: string
+          score: number
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          articles?: Json
+          buzz?: number
+          label: string
+          score: number
+          symbol: string
+          updated_at?: string
+        }
+        Update: {
+          articles?: Json
+          buzz?: number
+          label?: string
+          score?: number
+          symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

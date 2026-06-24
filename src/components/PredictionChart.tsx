@@ -1,5 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { useHistoricalData } from "@/hooks/useAngelOneData";
+import { useHistoricalData, useForecast } from "@/hooks/useAngelOneData";
 
 interface PredictionChartProps {
   symbol: string;
@@ -7,6 +7,7 @@ interface PredictionChartProps {
 
 const PredictionChart = ({ symbol }: PredictionChartProps) => {
   const { data: historicalData, isLoading } = useHistoricalData(symbol);
+  const { data: forecastData } = useForecast(symbol);
 
   if (!isLoading && !historicalData?.length) {
     return (
@@ -25,17 +26,30 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
     );
   }
 
-  const data = historicalData ?? [];
+  const history = (historicalData ?? []).map((d) => ({ ...d }));
+  // Append forecast points so the chart shows a continuous projected line.
+  const forecastRows = (forecastData?.forecast ?? []).map((f) => ({
+    date: f.date,
+    forecast: f.forecast,
+    lower: f.lower,
+    upper: f.upper,
+  }));
+  // Bridge: anchor the forecast line to the last actual close.
+  if (history.length && forecastRows.length) {
+    const last = history[history.length - 1] as Record<string, unknown>;
+    last.forecast = last.actual as number;
+  }
+  const data = [...history, ...forecastRows];
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 card-glow">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-foreground">
-            Historical Price Data
+            Price History & 7-Day Forecast
           </h3>
           <p className="text-sm text-muted-foreground">
-            Market feed · Last 1 month
+            Market feed · Last 1 month + SES/linear-regression projection
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-md bg-primary/10 px-3 py-1">
@@ -65,6 +79,9 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
           <Line type="monotone" dataKey="actual" name="Close" stroke="hsl(210 20% 92%)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
           <Line type="monotone" dataKey="high" name="High" stroke="hsl(160 100% 45%)" strokeWidth={1.5} dot={false} />
           <Line type="monotone" dataKey="low" name="Low" stroke="hsl(0 72% 55%)" strokeWidth={1.5} dot={false} />
+          <Line type="monotone" dataKey="forecast" name="Forecast" stroke="hsl(45 90% 55%)" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls />
+          <Line type="monotone" dataKey="upper" name="Upper band" stroke="hsl(45 90% 55%)" strokeWidth={1} strokeOpacity={0.4} dot={false} connectNulls />
+          <Line type="monotone" dataKey="lower" name="Lower band" stroke="hsl(45 90% 55%)" strokeWidth={1} strokeOpacity={0.4} dot={false} connectNulls />
         </LineChart>
       </ResponsiveContainer>
     </div>
