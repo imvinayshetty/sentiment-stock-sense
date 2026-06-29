@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, TrendingUp, TrendingDown } from "lucide-react";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
@@ -21,6 +21,9 @@ function scoreStock(s: StockQuote): number {
 
 const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const [query, setQuery] = useState("");
+  // Remember the last symbol the user explicitly clicked, so that when an
+  // auto-selected (typed) query is cleared we can restore their real choice.
+  const lastExplicitRef = useRef(selectedSymbol);
   const { data: quotes, isLoading } = useStockQuotes();
   const liveStocks = quotes?.data ?? [];
   const directory = getStockDirectory();
@@ -58,6 +61,15 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
     return () => clearTimeout(handle);
   }, [q, stocks, selectedSymbol, onSelect]);
 
+  // When the query is cleared (deleted or Escape), restore the user's last
+  // explicit selection rather than leaving an auto-selected stock active.
+  useEffect(() => {
+    if (q) return;
+    if (lastExplicitRef.current && lastExplicitRef.current !== selectedSymbol) {
+      onSelect(lastExplicitRef.current);
+    }
+  }, [q, selectedSymbol, onSelect]);
+
   const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
   const topBuy = ranked.slice(0, 10);
   const topSell = ranked.slice(-10).reverse();
@@ -66,7 +78,10 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const renderCard = (stock: StockQuote) => (
     <button
       key={stock.symbol}
-      onClick={() => onSelect(stock.symbol)}
+      onClick={() => {
+        lastExplicitRef.current = stock.symbol;
+        onSelect(stock.symbol);
+      }}
       className={`rounded-lg border p-3 text-left transition-all hover:border-primary/50 hover:card-glow ${
         selectedSymbol === stock.symbol
           ? "border-primary bg-primary/10 card-glow"
