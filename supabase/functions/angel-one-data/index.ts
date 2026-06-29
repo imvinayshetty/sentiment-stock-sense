@@ -14,7 +14,7 @@ const STOCK_TOKENS: Record<string, { name: string; yahooSymbol: string }> = {
   HDFCBANK: { name: "HDFC Bank Ltd.", yahooSymbol: "HDFCBANK.NS" },
   ICICIBANK: { name: "ICICI Bank Ltd.", yahooSymbol: "ICICIBANK.NS" },
   WIPRO: { name: "Wipro Ltd.", yahooSymbol: "WIPRO.NS" },
-  TATAMOTORS: { name: "Tata Motors Ltd.", yahooSymbol: "TATAMOTOR.NS" },
+  TATAMOTORS: { name: "Tata Motors Ltd.", yahooSymbol: "TATAMOTORS.NS" },
   SBIN: { name: "State Bank of India", yahooSymbol: "SBIN.NS" },
   BAJFINANCE: { name: "Bajaj Finance Ltd.", yahooSymbol: "BAJFINANCE.NS" },
   ITC: { name: "ITC Ltd.", yahooSymbol: "ITC.NS" },
@@ -378,7 +378,8 @@ function getMarketStatus(timestampSeconds?: number): { status: "OPEN" | "CLOSED"
   const day = ist.getUTCDay();
   const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   const isWeekday = day >= 1 && day <= 5;
-  const open = isWeekday && minutes >= 9 * 60 + 15 && minutes <= 15 * 60 + 30;
+  const isHoliday = NSE_HOLIDAYS.has(ist.toISOString().slice(0, 10));
+  const open = isWeekday && !isHoliday && minutes >= 9 * 60 + 15 && minutes <= 15 * 60 + 30;
 
   return {
     status: open ? "OPEN" : "CLOSED",
@@ -395,6 +396,20 @@ function formatVolume(value: number | null | undefined) {
 }
 
 async function fetchChart(symbol: string, range = "5d", interval = "1d") {
+  return await _fetchChart(symbol, range, interval);
+}
+
+// Run async work in small concurrency-limited batches to avoid Yahoo rate-limiting (429s).
+async function fetchInBatches<T, R>(items: T[], batchSize: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = await Promise.all(items.slice(i, i + batchSize).map(fn));
+    results.push(...batch);
+  }
+  return results;
+}
+
+async function _fetchChart(symbol: string, range = "5d", interval = "1d") {
   const response = await fetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`,
     {
@@ -505,8 +520,8 @@ serve(async (req) => {
 
       if (!data.length) {
         const entries = Object.entries(STOCK_TOKENS);
-        const results = await Promise.all(
-        entries.map(async ([stockSymbol, info]) => {
+        // Batch (5 at a time) to avoid Yahoo rate-limiting 45 simultaneous requests.
+        const results = await fetchInBatches(entries, 5, async ([stockSymbol, info]) => {
           try {
             const chart = await fetchChart(info.yahooSymbol, "5d", "1d");
             return mapQuote(stockSymbol, info, chart);
@@ -514,8 +529,7 @@ serve(async (req) => {
             console.error(`Quote fetch failed for ${stockSymbol}:`, error);
             return null;
           }
-        }),
-        );
+        });
         data = results.filter((item): item is NonNullable<typeof item> => Boolean(item) && item.price > 0);
       }
 

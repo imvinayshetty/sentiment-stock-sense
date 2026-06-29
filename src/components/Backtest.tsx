@@ -68,8 +68,8 @@ const Backtest = ({ symbol }: BacktestProps) => {
           </div>
 
           <div className="mt-4 space-y-2">
-            {data.recent.map((r, idx) => (
-              <div key={idx} className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-2 text-xs">
+            {data.recent.map((r) => (
+              <div key={`${r.symbol}-${r.predicted_at}-${r.horizon_date}`} className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-2 text-xs">
                 <span className="text-muted-foreground">{r.predicted_at} → {r.horizon_date}</span>
                 <span className="font-mono text-foreground">
                   ₹{Number(r.base_price).toFixed(0)} → ₹{Number(r.predicted_price).toFixed(0)}

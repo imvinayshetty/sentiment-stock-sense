@@ -44,7 +44,8 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
 
   // Confidence: combines distance from neutral (50) with sample-size weight (log scale)
   const extremity = Math.min(1, Math.abs(score - 50) / 40); // 0..1
-  const volumeWeight = Math.min(1, Math.log10(Math.max(tweets, 1) + 1) / Math.log10(20001)); // ~0..1 up to 20k mentions
+  // Calibrated to ~50 articles/week as "high coverage" (news volume, not tweet volume).
+  const volumeWeight = Math.min(1, Math.log10(Math.max(tweets, 1) + 1) / Math.log10(51));
   const confidence = Math.round((extremity * 0.6 + volumeWeight * 0.4) * 100);
   const confidenceLabel = confidence >= 75 ? "High" : confidence >= 50 ? "Moderate" : confidence >= 30 ? "Low" : "Very Low";
   const confidenceColor =

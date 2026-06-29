@@ -56,8 +56,7 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
       if (best && best.symbol !== selectedSymbol) onSelect(best.symbol);
     }, 300);
     return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q]);
+  }, [q, stocks, selectedSymbol, onSelect]);
 
   const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
   const topBuy = ranked.slice(0, 10);

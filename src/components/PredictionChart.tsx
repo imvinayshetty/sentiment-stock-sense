@@ -33,6 +33,8 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
     forecast: f.forecast,
     lower: f.lower,
     upper: f.upper,
+    high: undefined,
+    low: undefined,
   }));
   // Bridge: anchor the forecast line to the last actual close.
   if (history.length && forecastRows.length) {
@@ -40,6 +42,13 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
     last.forecast = last.actual as number;
   }
   const data = [...history, ...forecastRows];
+
+  // Compute an explicit Y domain so historical + forecast ranges are both visible.
+  const allValues = (data as any[])
+    .flatMap((d) => [d.actual, d.forecast, d.upper, d.lower, d.high, d.low])
+    .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
+  const yMin = allValues.length ? Math.min(...allValues) * 0.995 : 0;
+  const yMax = allValues.length ? Math.max(...allValues) * 1.005 : 0;
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 card-glow">
@@ -63,7 +72,7 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
         <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
           <XAxis dataKey="date" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} />
-          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} domain={["auto", "auto"]} />
+          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} domain={[yMin, yMax]} />
           <Tooltip
             contentStyle={{
               backgroundColor: "hsl(var(--popover))",
