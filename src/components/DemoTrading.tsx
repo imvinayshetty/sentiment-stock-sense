@@ -114,7 +114,7 @@ const DemoTrading = () => {
     const t = setTimeout(() => {
       supabase
         .from("demo_state")
-        .upsert({ session_id: sessionId.current, state: payload as unknown as Record<string, unknown>, updated_at: new Date().toISOString() })
+        .upsert({ session_id: sessionId.current, state: JSON.parse(JSON.stringify(payload)), updated_at: new Date().toISOString() })
         .then(({ error }) => { if (error) console.error("Demo portfolio save failed:", error); });
     }, 600);
     return () => clearTimeout(t);
