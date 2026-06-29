@@ -7,15 +7,6 @@ import {
   PlusCircle,
   RotateCcw,
 } from "lucide-react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
@@ -166,50 +157,6 @@ const DemoTrading = () => {
   // Reconstruct portfolio NAV (net asset value) history client-side by replaying
   // the timestamped trade log. Holdings are marked to the last execution price
   // known up to that point; a final "Now" point uses live prices.
-  const navHistory = useMemo(() => {
-    if (trades.length === 0) return [] as { time: string; value: number }[];
-    const chronological = [...trades].reverse(); // stored newest-first
-    const positions: Record<string, number> = {};
-    const lastPrice: Record<string, number> = {};
-    const points: { time: string; value: number }[] = [];
-    // Back-calculate the starting cash by reversing the effect of every trade
-    // on the current balance, so NAV = cash + holdings value at each point.
-    let portfolioCash = balance;
-    for (const t of trades) {
-      if (t.side === "BUY") portfolioCash += t.total;
-      else portfolioCash -= t.total;
-    }
-    for (const t of chronological) {
-      if (t.side === "BUY") {
-        portfolioCash -= t.total;
-        positions[t.symbol] = (positions[t.symbol] ?? 0) + t.quantity;
-      } else {
-        portfolioCash += t.total;
-        positions[t.symbol] = (positions[t.symbol] ?? 0) - t.quantity;
-        if (positions[t.symbol] <= 0) delete positions[t.symbol];
-      }
-      lastPrice[t.symbol] = t.price;
-      const holdingsValue = Object.entries(positions).reduce(
-        (sum, [sym, qty]) => sum + qty * (lastPrice[sym] ?? 0),
-        0,
-      );
-      points.push({ time: t.time, value: Number((portfolioCash + holdingsValue).toFixed(2)) });
-    }
-    // Append a live "Now" point using current market prices
-    const liveHoldings = Object.entries(positions).reduce(
-      (sum, [sym, qty]) => sum + qty * (priceMap.get(sym) ?? lastPrice[sym] ?? 0),
-      0,
-    );
-    points.push({ time: "Now", value: Number((balance + liveHoldings).toFixed(2)) });
-    return points;
-  }, [trades, balance, priceMap]);
-
-  // Colour the NAV chart by overall direction: green when up, red when down.
-  const navIsUp =
-    navHistory.length > 1 &&
-    navHistory[navHistory.length - 1].value >= navHistory[0].value;
-  const navColor = navIsUp ? "hsl(var(--chart-up))" : "hsl(var(--chart-down))";
-
   // Keep the selected stock's price in sync with live quotes
   const liveSelected = selected
     ? stocks.find((s) => s.symbol === selected.symbol) ?? selected
@@ -525,56 +472,6 @@ const DemoTrading = () => {
         </table>
       </div>
 
-      {navHistory.length > 1 && (
-        <div className="mt-4 rounded-lg border border-border bg-secondary/20 p-3">
-          <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
-            Portfolio Value (demo)
-          </h3>
-          <div className="h-44 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={navHistory} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="navFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={navColor} stopOpacity={0.35} />
-                    <stop offset="100%" stopColor={navColor} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis
-                  dataKey="time"
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                  tickLine={false}
-                  axisLine={false}
-                  minTickGap={24}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                  tickLine={false}
-                  axisLine={false}
-                  width={56}
-                  tickFormatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  formatter={(v: number) => [`₹${Number(v).toFixed(2)}`, "Value"]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke={navColor}
-                  strokeWidth={2}
-                  fill="url(#navFill)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
 
       {holdingsList.length > 0 && (
         <div className="mt-4">
