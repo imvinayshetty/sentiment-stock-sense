@@ -105,7 +105,15 @@ async function generateTotp(secret: string): Promise<string> {
   return (code % 1_000_000).toString().padStart(6, "0");
 }
 
-async function fetchAngelQuotes() {
+function angelHeaders(apiKey: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json", "Accept": "application/json",
+    "X-UserType": "USER", "X-SourceID": "WEB", "X-ClientLocalIP": "127.0.0.1",
+    "X-ClientPublicIP": "127.0.0.1", "X-MACAddress": "00:00:00:00:00:00", "X-PrivateKey": apiKey,
+  };
+}
+
+async function angelLogin(): Promise<string> {
   const apiKey = Deno.env.get("ANGEL_ONE_API_KEY");
   const clientId = Deno.env.get("ANGEL_ONE_CLIENT_ID");
   const mpin = Deno.env.get("ANGEL_ONE_PASSWORD");
@@ -113,30 +121,61 @@ async function fetchAngelQuotes() {
   if (!apiKey || !clientId || !mpin || !totpSecret) throw new Error("Angel One credentials missing");
 
   const otp = await generateTotp(totpSecret);
-  const baseHeaders: Record<string, string> = {
-    "Content-Type": "application/json", "Accept": "application/json",
-    "X-UserType": "USER", "X-SourceID": "WEB", "X-ClientLocalIP": "127.0.0.1",
-    "X-ClientPublicIP": "127.0.0.1", "X-MACAddress": "00:00:00:00:00:00", "X-PrivateKey": apiKey,
-  };
-
   const loginRes = await fetch(
     "https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword",
-    { method: "POST", headers: baseHeaders, body: JSON.stringify({ clientcode: clientId, password: mpin, totp: otp }) },
+    { method: "POST", headers: angelHeaders(apiKey), body: JSON.stringify({ clientcode: clientId, password: mpin, totp: otp }) },
   );
-  const loginData = await loginRes.json();
+  const loginData = await loginRes.json().catch(() => null);
   const jwt = loginData?.data?.jwtToken;
   if (!jwt) throw new Error(`Angel One login failed: ${JSON.stringify(loginData?.message ?? loginData)}`);
+  return jwt;
+}
 
-  const quoteRes = await fetch(
+// Reuse a cached JWT (6h TTL) instead of re-authenticating on every quote refresh.
+async function getAngelJwt(supabase: any, forceNew = false): Promise<string> {
+  if (!forceNew) {
+    try {
+      const { data } = await supabase
+        .from("angel_session").select("jwt,expires_at").eq("id", "singleton").maybeSingle();
+      if (data?.jwt && new Date(data.expires_at).getTime() > Date.now() + 60_000) return data.jwt;
+    } catch (_) { /* fall through to fresh login */ }
+  }
+  const jwt = await angelLogin();
+  try {
+    await supabase.from("angel_session").upsert({
+      id: "singleton",
+      jwt,
+      expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("angel_session cache write failed:", e);
+  }
+  return jwt;
+}
+
+async function fetchAngelQuotes(supabase: any) {
+  const apiKey = Deno.env.get("ANGEL_ONE_API_KEY");
+  if (!apiKey) throw new Error("Angel One credentials missing");
+
+  const body = JSON.stringify({ mode: "FULL", exchangeTokens: { NSE: Object.values(ANGEL_TOKENS) } });
+  const doQuote = (jwt: string) => fetch(
     "https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/",
-    {
-      method: "POST",
-      headers: { ...baseHeaders, Authorization: `Bearer ${jwt}` },
-      body: JSON.stringify({ mode: "FULL", exchangeTokens: { NSE: Object.values(ANGEL_TOKENS) } }),
-    },
+    { method: "POST", headers: { ...angelHeaders(apiKey), Authorization: `Bearer ${jwt}` }, body },
   );
-  const quoteData = await quoteRes.json();
-  const fetched: any[] = quoteData?.data?.fetched ?? [];
+
+  let jwt = await getAngelJwt(supabase);
+  let quoteRes = await doQuote(jwt);
+  let quoteData = await quoteRes.json().catch(() => null);
+  let fetched: any[] = quoteData?.data?.fetched ?? [];
+
+  // If the cached token was rejected, re-login once and retry.
+  if (!fetched.length && (quoteRes.status === 401 || /token|invalid|expired|unauthor/i.test(JSON.stringify(quoteData?.message ?? "")))) {
+    jwt = await getAngelJwt(supabase, true);
+    quoteRes = await doQuote(jwt);
+    quoteData = await quoteRes.json().catch(() => null);
+    fetched = quoteData?.data?.fetched ?? [];
+  }
   if (!fetched.length) throw new Error(`Angel One quote empty: ${JSON.stringify(quoteData?.message ?? quoteData)}`);
 
   return fetched.map((f) => {
