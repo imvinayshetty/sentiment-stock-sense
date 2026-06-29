@@ -44,7 +44,7 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
   const data = [...history, ...forecastRows];
 
   // Compute an explicit Y domain so historical + forecast ranges are both visible.
-  const allValues = (data as Array<Record<string, number | undefined>>)
+  const allValues = (data as any[])
     .flatMap((d) => [d.actual, d.forecast, d.upper, d.lower, d.high, d.low])
     .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
   const yMin = allValues.length ? Math.min(...allValues) * 0.995 : 0;
