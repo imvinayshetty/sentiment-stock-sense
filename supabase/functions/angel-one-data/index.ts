@@ -340,8 +340,9 @@ async function reconcileBacktest(supabase: any, symbol: string, candles: any[]) 
     .from("prediction_log").select("*").eq("symbol", symbol).is("actual_price", null);
   if (!pending?.length) return;
   for (const row of pending) {
-    // find the first available close on/after the horizon date
-    const target = isoDates.find((d) => d >= row.horizon_date);
+    // Find the first available close strictly after the horizon date so an
+    // in-progress horizon day is never reconciled before its market close.
+    const target = isoDates.find((d) => d > row.horizon_date);
     if (!target) continue;
     const actual = closeByDate[target];
     const wentUp = actual > Number(row.base_price);
