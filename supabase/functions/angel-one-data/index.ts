@@ -463,7 +463,7 @@ serve(async (req) => {
       // During market hours, prefer Angel One live quotes; fall back to Yahoo on any failure.
       if (market.status === "OPEN") {
         try {
-          data = await fetchAngelQuotes();
+          data = await fetchAngelQuotes(getSupabase());
         } catch (error) {
           console.error("Angel One quotes failed, falling back to Yahoo:", error);
           data = [];
