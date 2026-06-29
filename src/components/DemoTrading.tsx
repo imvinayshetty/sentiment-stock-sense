@@ -7,6 +7,15 @@ import {
   PlusCircle,
   RotateCcw,
 } from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
