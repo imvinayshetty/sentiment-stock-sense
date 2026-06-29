@@ -396,6 +396,20 @@ function formatVolume(value: number | null | undefined) {
 }
 
 async function fetchChart(symbol: string, range = "5d", interval = "1d") {
+  return await _fetchChart(symbol, range, interval);
+}
+
+// Run async work in small concurrency-limited batches to avoid Yahoo rate-limiting (429s).
+async function fetchInBatches<T, R>(items: T[], batchSize: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = await Promise.all(items.slice(i, i + batchSize).map(fn));
+    results.push(...batch);
+  }
+  return results;
+}
+
+async function _fetchChart(symbol: string, range = "5d", interval = "1d") {
   const response = await fetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`,
     {
