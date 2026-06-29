@@ -42,14 +42,18 @@ const Backtest = ({ symbol }: BacktestProps) => {
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-3 gap-3">
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
               <div className="font-mono text-2xl font-bold text-foreground">
                 {data.mae !== null ? `₹${data.mae.toFixed(2)}` : "—"}
               </div>
-              <div className="text-xs text-muted-foreground">
-                Mean abs. error{data.mape !== null ? ` · ${data.mape.toFixed(1)}%` : ""}
+              <div className="text-xs text-muted-foreground">Mean abs. error</div>
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-3 text-center">
+              <div className="font-mono text-2xl font-bold text-foreground">
+                {data.mape !== null ? `${data.mape.toFixed(1)}%` : "—"}
               </div>
+              <div className="text-xs text-muted-foreground">MAPE (avg % error)</div>
             </div>
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
               <div className={`font-mono text-2xl font-bold ${data.withinBandPct !== null && data.withinBandPct >= 68 ? "text-chart-up" : "text-chart-neutral"}`}>

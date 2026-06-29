@@ -254,6 +254,18 @@ function computeMACD(closes: number[]): { macd: number; signal: number; hist: nu
   return { macd, signal, hist: macd - signal };
 }
 
+// NSE trading holidays (full-day closures) for 2025–2026. Filtered out of forecast dates.
+const NSE_HOLIDAYS = new Set<string>([
+  // 2025
+  "2025-02-26", "2025-03-14", "2025-03-31", "2025-04-10", "2025-04-14",
+  "2025-04-18", "2025-05-01", "2025-08-15", "2025-08-27", "2025-10-02",
+  "2025-10-21", "2025-10-22", "2025-11-05", "2025-12-25",
+  // 2026
+  "2026-01-26", "2026-02-15", "2026-03-04", "2026-03-21", "2026-04-01",
+  "2026-04-03", "2026-04-14", "2026-05-01", "2026-08-15", "2026-10-02",
+  "2026-10-20", "2026-11-09", "2026-12-25",
+]);
+
 function computeForecast(closes: number[]) {
   if (closes.length < 5) return null;
   const window = closes.slice(-30);
@@ -288,6 +300,7 @@ function computeForecast(closes: number[]) {
     d.setDate(d.getDate() + 1);
     const dow = d.getDay();
     if (dow === 0 || dow === 6) continue; // skip Sun/Sat
+    if (NSE_HOLIDAYS.has(d.toISOString().slice(0, 10))) continue; // skip NSE holidays
     tradingDay++;
     const linPred = intercept + slope * (n - 1 + tradingDay);
     // Base SES/LR forecast nudged by indicator momentum (max ~0.1%/day).

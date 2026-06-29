@@ -40,16 +40,19 @@ export type Database = {
       }
       demo_state: {
         Row: {
+          created_at: string
           session_id: string
           state: Json
           updated_at: string
         }
         Insert: {
+          created_at?: string
           session_id: string
           state?: Json
           updated_at?: string
         }
         Update: {
+          created_at?: string
           session_id?: string
           state?: Json
           updated_at?: string
