@@ -169,34 +169,34 @@ const DemoTrading = () => {
   const navHistory = useMemo(() => {
     if (trades.length === 0) return [] as { time: string; value: number }[];
     const chronological = [...trades].reverse(); // stored newest-first
-    const lots: Record<string, number> = {};
+    const positions: Record<string, number> = {};
     const lastPrice: Record<string, number> = {};
     const points: { time: string; value: number }[] = [];
     // Back-calculate the starting cash by reversing the effect of every trade
     // on the current balance, so NAV = cash + holdings value at each point.
-    let cash = balance;
+    let portfolioCash = balance;
     for (const t of trades) {
-      if (t.side === "BUY") cash += t.total;
-      else cash -= t.total;
+      if (t.side === "BUY") portfolioCash += t.total;
+      else portfolioCash -= t.total;
     }
     for (const t of chronological) {
       if (t.side === "BUY") {
-        cash -= t.total;
-        lots[t.symbol] = (lots[t.symbol] ?? 0) + t.quantity;
+        portfolioCash -= t.total;
+        positions[t.symbol] = (positions[t.symbol] ?? 0) + t.quantity;
       } else {
-        cash += t.total;
-        lots[t.symbol] = (lots[t.symbol] ?? 0) - t.quantity;
-        if (lots[t.symbol] <= 0) delete lots[t.symbol];
+        portfolioCash += t.total;
+        positions[t.symbol] = (positions[t.symbol] ?? 0) - t.quantity;
+        if (positions[t.symbol] <= 0) delete positions[t.symbol];
       }
       lastPrice[t.symbol] = t.price;
-      const holdingsValue = Object.entries(lots).reduce(
+      const holdingsValue = Object.entries(positions).reduce(
         (sum, [sym, qty]) => sum + qty * (lastPrice[sym] ?? 0),
         0,
       );
-      points.push({ time: t.time, value: Number((cash + holdingsValue).toFixed(2)) });
+      points.push({ time: t.time, value: Number((portfolioCash + holdingsValue).toFixed(2)) });
     }
     // Append a live "Now" point using current market prices
-    const liveHoldings = Object.entries(lots).reduce(
+    const liveHoldings = Object.entries(positions).reduce(
       (sum, [sym, qty]) => sum + qty * (priceMap.get(sym) ?? lastPrice[sym] ?? 0),
       0,
     );
