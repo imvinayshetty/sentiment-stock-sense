@@ -14,7 +14,7 @@ const STOCK_TOKENS: Record<string, { name: string; yahooSymbol: string }> = {
   HDFCBANK: { name: "HDFC Bank Ltd.", yahooSymbol: "HDFCBANK.NS" },
   ICICIBANK: { name: "ICICI Bank Ltd.", yahooSymbol: "ICICIBANK.NS" },
   WIPRO: { name: "Wipro Ltd.", yahooSymbol: "WIPRO.NS" },
-  TATAMOTORS: { name: "Tata Motors Ltd.", yahooSymbol: "TATAMOTOR.NS" },
+  TATAMOTORS: { name: "Tata Motors Ltd.", yahooSymbol: "TATAMOTORS.NS" },
   SBIN: { name: "State Bank of India", yahooSymbol: "SBIN.NS" },
   BAJFINANCE: { name: "Bajaj Finance Ltd.", yahooSymbol: "BAJFINANCE.NS" },
   ITC: { name: "ITC Ltd.", yahooSymbol: "ITC.NS" },
@@ -378,7 +378,8 @@ function getMarketStatus(timestampSeconds?: number): { status: "OPEN" | "CLOSED"
   const day = ist.getUTCDay();
   const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   const isWeekday = day >= 1 && day <= 5;
-  const open = isWeekday && minutes >= 9 * 60 + 15 && minutes <= 15 * 60 + 30;
+  const isHoliday = NSE_HOLIDAYS.has(ist.toISOString().slice(0, 10));
+  const open = isWeekday && !isHoliday && minutes >= 9 * 60 + 15 && minutes <= 15 * 60 + 30;
 
   return {
     status: open ? "OPEN" : "CLOSED",
