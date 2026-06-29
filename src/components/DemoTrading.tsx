@@ -163,6 +163,34 @@ const DemoTrading = () => {
     [stocks],
   );
 
+  // Reconstruct portfolio NAV (net asset value) history client-side by replaying
+  // the timestamped trade log. Holdings are marked to the last execution price
+  // known up to that point; a final "Now" point uses live prices.
+  const navHistory = useMemo(() => {
+    if (trades.length === 0) return [] as { time: string; value: number }[];
+    const chronological = [...trades].reverse(); // stored newest-first
+    const lots: Record<string, number> = {};
+    const lastPrice: Record<string, number> = {};
+    const points: { time: string; value: number }[] = [];
+    for (const t of chronological) {
+      lots[t.symbol] = (lots[t.symbol] ?? 0) + (t.side === "BUY" ? t.quantity : -t.quantity);
+      if (lots[t.symbol] <= 0) delete lots[t.symbol];
+      lastPrice[t.symbol] = t.price;
+      const value = Object.entries(lots).reduce(
+        (sum, [sym, qty]) => sum + qty * (lastPrice[sym] ?? 0),
+        0,
+      );
+      points.push({ time: t.time, value: Number(value.toFixed(2)) });
+    }
+    // Append a live "Now" point using current market prices
+    const liveValue = Object.entries(lots).reduce(
+      (sum, [sym, qty]) => sum + qty * (priceMap.get(sym) ?? lastPrice[sym] ?? 0),
+      0,
+    );
+    points.push({ time: "Now", value: Number(liveValue.toFixed(2)) });
+    return points;
+  }, [trades, priceMap]);
+
   // Keep the selected stock's price in sync with live quotes
   const liveSelected = selected
     ? stocks.find((s) => s.symbol === selected.symbol) ?? selected
