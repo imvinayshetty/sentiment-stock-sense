@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      angel_session: {
+        Row: {
+          expires_at: string
+          feed_token: string | null
+          id: string
+          jwt: string
+          updated_at: string
+        }
+        Insert: {
+          expires_at: string
+          feed_token?: string | null
+          id?: string
+          jwt: string
+          updated_at?: string
+        }
+        Update: {
+          expires_at?: string
+          feed_token?: string | null
+          id?: string
+          jwt?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      demo_state: {
+        Row: {
+          session_id: string
+          state: Json
+          updated_at: string
+        }
+        Insert: {
+          session_id: string
+          state?: Json
+          updated_at?: string
+        }
+        Update: {
+          session_id?: string
+          state?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       prediction_log: {
         Row: {
           actual_price: number | null
@@ -23,9 +65,12 @@ export type Database = {
           direction: string
           horizon_date: string
           id: string
+          lower_bound: number | null
           predicted_at: string
           predicted_price: number
+          sigma: number | null
           symbol: string
+          upper_bound: number | null
         }
         Insert: {
           actual_price?: number | null
@@ -35,9 +80,12 @@ export type Database = {
           direction: string
           horizon_date: string
           id?: string
+          lower_bound?: number | null
           predicted_at: string
           predicted_price: number
+          sigma?: number | null
           symbol: string
+          upper_bound?: number | null
         }
         Update: {
           actual_price?: number | null
@@ -47,9 +95,12 @@ export type Database = {
           direction?: string
           horizon_date?: string
           id?: string
+          lower_bound?: number | null
           predicted_at?: string
           predicted_price?: number
+          sigma?: number | null
           symbol?: string
+          upper_bound?: number | null
         }
         Relationships: []
       }
