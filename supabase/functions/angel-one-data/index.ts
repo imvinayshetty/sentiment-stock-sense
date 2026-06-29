@@ -218,6 +218,42 @@ function linearRegression(y: number[]): { slope: number; intercept: number } {
   return { slope, intercept: yMean - slope * xMean };
 }
 
+// ---------- Technical indicators (RSI, MACD) ----------
+function emaSeries(values: number[], period: number): number[] {
+  const k = 2 / (period + 1);
+  const out: number[] = [];
+  let e = values[0] ?? 0;
+  for (let i = 0; i < values.length; i++) {
+    e = i === 0 ? values[0] : values[i] * k + e * (1 - k);
+    out.push(e);
+  }
+  return out;
+}
+
+function computeRSI(closes: number[], period = 14): number {
+  if (closes.length < period + 1) return 50;
+  let gains = 0, losses = 0;
+  for (let i = closes.length - period; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff >= 0) gains += diff; else losses -= diff;
+  }
+  const avgGain = gains / period, avgLoss = losses / period;
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
+}
+
+function computeMACD(closes: number[]): { macd: number; signal: number; hist: number } {
+  if (closes.length < 26) return { macd: 0, signal: 0, hist: 0 };
+  const ema12 = emaSeries(closes, 12);
+  const ema26 = emaSeries(closes, 26);
+  const macdLine = closes.map((_, i) => ema12[i] - ema26[i]);
+  const signalSeries = emaSeries(macdLine.slice(25), 9);
+  const macd = macdLine[macdLine.length - 1];
+  const signal = signalSeries[signalSeries.length - 1];
+  return { macd, signal, hist: macd - signal };
+}
+
 function computeForecast(closes: number[]) {
   if (closes.length < 5) return null;
   const window = closes.slice(-30);
@@ -236,15 +272,27 @@ function computeForecast(closes: number[]) {
   const rMean = rets.reduce((a, b) => a + b, 0) / (rets.length || 1);
   const sigma = Math.sqrt(rets.reduce((a, b) => a + (b - rMean) ** 2, 0) / (rets.length || 1)) || 0.015;
 
+  // Technical-indicator directional bias, blended into the forecast drift.
+  const rsi = computeRSI(closes, 14);
+  const macd = computeMACD(closes);
   const lastPrice = window[n - 1];
-  const today = new Date();
+  const rsiBias = Math.max(-1, Math.min(1, (rsi - 50) / 50));          // overbought>0, oversold<0
+  const macdBias = Math.max(-1, Math.min(1, (macd.hist / (lastPrice || 1)) * 200)); // normalized histogram
+  const momentum = Math.max(-1, Math.min(1, 0.5 * rsiBias + 0.5 * macdBias)); // -1..1
+
+  // Build 7 trading days, skipping weekends (NSE closed Sat/Sun).
   const out = [];
-  for (let i = 1; i <= 7; i++) {
-    const linPred = intercept + slope * (n - 1 + i);
-    const forecast = 0.6 * linPred + 0.4 * s;
-    const band = forecast * sigma * Math.sqrt(i);
-    const d = new Date(today);
-    d.setDate(d.getDate() + i);
+  const d = new Date();
+  let tradingDay = 0;
+  while (out.length < 7) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) continue; // skip Sun/Sat
+    tradingDay++;
+    const linPred = intercept + slope * (n - 1 + tradingDay);
+    // Base SES/LR forecast nudged by indicator momentum (max ~0.1%/day).
+    const forecast = (0.6 * linPred + 0.4 * s) * (1 + momentum * 0.001 * tradingDay);
+    const band = forecast * sigma * Math.sqrt(tradingDay);
     out.push({
       date: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
       isoDate: d.toISOString().slice(0, 10),
@@ -253,7 +301,17 @@ function computeForecast(closes: number[]) {
       upper: Number((forecast + band).toFixed(2)),
     });
   }
-  return { lastPrice, sigma, forecast: out };
+  return {
+    lastPrice,
+    sigma,
+    indicators: {
+      rsi: Number(rsi.toFixed(1)),
+      macd: Number(macd.macd.toFixed(2)),
+      macdSignal: Number(macd.signal.toFixed(2)),
+      momentum: Number(momentum.toFixed(3)),
+    },
+    forecast: out,
+  };
 }
 
 function isoToCloseMap(candles: any[]): Record<string, number> {
