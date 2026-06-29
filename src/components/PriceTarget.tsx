@@ -99,8 +99,9 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
         {renderHorizon("Next 30 days", projections.d30)}
       </div>
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Estimated using historical log-return volatility with a sentiment-driven drift. ±1σ range
-        reflects expected variability, not guaranteed outcomes. Not financial advice.
+        Targets come from the same SES + linear-regression + RSI/MACD model used in the forecast chart.
+        The 30-day figure extrapolates the model's daily growth rate; ±1σ range reflects expected
+        variability, not guaranteed outcomes. Not financial advice.
       </p>
     </div>
   );
