@@ -56,9 +56,11 @@ export function useHistoricalData(symbol: string) {
       const result = await callEdgeFunction("historical", { symbol });
       if (!result.success) throw new Error(result.error);
 
-      // Transform Angel One candle data [timestamp, open, high, low, close, volume]
+      // Transform candle data [timestamp, open, high, low, close, volume].
+      // candle[0] is normally an ISO string but defensively handle Unix seconds.
       return (result.data || []).map((candle: any[]) => ({
-        date: new Date(candle[0]).toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+        date: new Date(isNaN(Number(candle[0])) ? candle[0] : Number(candle[0]) * 1000)
+          .toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
         actual: candle[4], // close price
         open: candle[1],
         high: candle[2],
@@ -152,7 +154,7 @@ export function useForecast(symbol: string) {
     },
     enabled: !!symbol,
     staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 }
