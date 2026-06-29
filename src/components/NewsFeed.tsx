@@ -26,7 +26,7 @@ const NewsFeed = ({ symbol }: NewsFeedProps) => {
       <div className="space-y-3">
         {news.map((item, idx) => (
           <a
-            key={idx}
+            key={item.link || `${item.title}-${item.source}`}
             href={item.link}
             target="_blank"
             rel="noopener noreferrer"
