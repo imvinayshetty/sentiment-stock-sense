@@ -117,7 +117,9 @@ export function useNewsSentiment(symbol: string) {
       };
     },
     enabled: !!symbol,
-    staleTime: 55 * 60 * 1000,
+    // Slightly longer than the server cache TTL (60min) so the client never
+    // forces a live fetch while the server would still return cached data.
+    staleTime: 65 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
   });

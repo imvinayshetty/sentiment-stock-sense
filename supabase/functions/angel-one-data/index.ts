@@ -358,17 +358,24 @@ async function reconcileBacktest(supabase: any, symbol: string, candles: any[]) 
     .from("prediction_log").select("*").eq("symbol", symbol).is("actual_price", null);
   if (!pending?.length) return;
   const today = new Date().toISOString().slice(0, 10);
-  for (const row of pending) {
-    // Find the first available close on/after the horizon date, but never use
-    // today's in-progress candle because intraday Yahoo candles are last-traded prices.
-    const target = isoDates.find((d) => d >= row.horizon_date && d < today);
-    if (!target) continue;
-    const actual = closeByDate[target];
-    const wentUp = actual > Number(row.base_price);
-    const correct = (row.direction === "up") === wentUp;
-    await supabase.from("prediction_log")
-      .update({ actual_price: actual, correct }).eq("id", row.id);
-  }
+  const updates = pending
+    .map((row: any) => {
+      // Find the first available close on/after the horizon date, but never use
+      // today's in-progress candle (intraday Yahoo candles are last-traded prices).
+      const target = isoDates.find((d) => d >= row.horizon_date && d < today);
+      if (!target) return null;
+      const actual = closeByDate[target];
+      const wentUp = actual > Number(row.base_price);
+      const correct = (row.direction === "up") === wentUp;
+      return { id: row.id, actual_price: actual, correct };
+    })
+    .filter((u): u is { id: string; actual_price: number; correct: boolean } => Boolean(u));
+  // Batch the updates so 10 pending rows aren't 10 sequential round-trips.
+  await Promise.all(
+    updates.map(({ id, actual_price, correct }) =>
+      supabase.from("prediction_log").update({ actual_price, correct }).eq("id", id)
+    ),
+  );
 }
 
 function getMarketStatus(timestampSeconds?: number): { status: "OPEN" | "CLOSED"; istTime: string } {
@@ -572,7 +579,9 @@ serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const chart = await fetchChart(stockInfo.yahooSymbol, "6mo", "1d");
+      // 3mo (~63 trading days) is enough to warm up RSI(14)/MACD(26) with buffer
+      // while computeForecast only uses the last 30 closes for SES/LR.
+      const chart = await fetchChart(stockInfo.yahooSymbol, "3mo", "1d");
       const candles = mapHistorical(chart);
       const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
       const result = computeForecast(closes);
