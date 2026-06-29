@@ -37,7 +37,7 @@ const Backtest = ({ symbol }: BacktestProps) => {
               <div className="text-xs text-muted-foreground">Predictions scored</div>
             </div>
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
-              <div className="font-mono text-2xl font-bold text-chart-up">{data.correct}</div>
+              <div className={`font-mono text-2xl font-bold ${data.evaluated > 0 && data.correct / data.evaluated >= 0.55 ? "text-chart-up" : "text-chart-neutral"}`}>{data.correct}</div>
               <div className="text-xs text-muted-foreground">Correct calls</div>
             </div>
           </div>

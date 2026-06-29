@@ -47,8 +47,9 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
   const allValues = (data as any[])
     .flatMap((d) => [d.actual, d.forecast, d.upper, d.lower, d.high, d.low])
     .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-  const yMin = allValues.length ? Math.min(...allValues) * 0.995 : 0;
-  const yMax = allValues.length ? Math.max(...allValues) * 1.005 : 0;
+  // Use 2% padding so daily high/low extremes don't squish the close/forecast lines.
+  const yMin = allValues.length ? Math.min(...allValues) * 0.98 : 0;
+  const yMax = allValues.length ? Math.max(...allValues) * 1.02 : 0;
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 card-glow">

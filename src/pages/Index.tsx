@@ -11,21 +11,25 @@ import PriceTarget from "@/components/PriceTarget";
 import NewsFeed from "@/components/NewsFeed";
 import Backtest from "@/components/Backtest";
 import DemoTrading from "@/components/DemoTrading";
-import { useStockQuotes } from "@/hooks/useAngelOneData";
+import { useStockQuotes, useForecast } from "@/hooks/useAngelOneData";
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
-  const { data: quotes, isFetching, refetch } = useStockQuotes();
+  const { data: quotes, isFetching: quotesFetching, refetch } = useStockQuotes();
+  const { isFetching: forecastFetching } = useForecast(selectedSymbol);
+  const isRefreshing = quotesFetching || forecastFetching;
   const queryClient = useQueryClient();
   const marketOpen = quotes?.marketStatus === "OPEN";
   const istTime = quotes?.istTime;
 
   const handleRefresh = () => {
     refetch();
-    queryClient.invalidateQueries({ queryKey: ["historical", selectedSymbol] });
-    queryClient.invalidateQueries({ queryKey: ["forecast", selectedSymbol] });
-    queryClient.invalidateQueries({ queryKey: ["news-sentiment", selectedSymbol] });
-    queryClient.invalidateQueries({ queryKey: ["backtest", selectedSymbol] });
+    // Force an actual refetch (refetchType: "active") so queries with long
+    // staleTime (e.g. news-sentiment at 65min) don't silently skip refreshing.
+    queryClient.invalidateQueries({ queryKey: ["historical", selectedSymbol], refetchType: "active" });
+    queryClient.invalidateQueries({ queryKey: ["forecast", selectedSymbol], refetchType: "active" });
+    queryClient.invalidateQueries({ queryKey: ["news-sentiment", selectedSymbol], refetchType: "active" });
+    queryClient.invalidateQueries({ queryKey: ["backtest", selectedSymbol], refetchType: "active" });
   };
 
   return (
@@ -47,10 +51,10 @@ const Index = () => {
               size="sm"
               variant="outline"
               onClick={handleRefresh}
-              disabled={isFetching}
+              disabled={isRefreshing}
               className="h-7 gap-1.5 text-xs"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
               Refresh quotes
             </Button>
             <span
