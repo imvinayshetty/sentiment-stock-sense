@@ -10,6 +10,7 @@ import {
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Trade {
   id: string;
@@ -30,6 +31,7 @@ interface Holding {
 
 const MAX_BALANCE = 100000;
 const STORAGE_KEY = "demo-trading-state";
+const SESSION_KEY = "demo-session-id";
 
 function loadState<T>(key: string, fallback: T): T {
   try {
@@ -39,6 +41,21 @@ function loadState<T>(key: string, fallback: T): T {
     return key in parsed ? (parsed[key] as T) : fallback;
   } catch {
     return fallback;
+  }
+}
+
+// Stable anonymous session id so the demo portfolio can be persisted in the backend
+// (survives storage clears / incognito on the same browser, syncs across reloads).
+function getSessionId(): string {
+  try {
+    let id = localStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return crypto.randomUUID();
   }
 }
 
@@ -61,15 +78,49 @@ const DemoTrading = () => {
   const { data: quotes, isLoading } = useStockQuotes();
   const { toast } = useToast();
 
-  // Persist demo trading data so it survives refreshes
+  const sessionId = useRef(getSessionId());
+  const remoteLoaded = useRef(false);
+
+  // Load the saved portfolio from the backend (primary), falling back to the
+  // localStorage copy that already seeded the initial state.
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ trades, balance, holdings }),
-    );
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("demo_state").select("state").eq("session_id", sessionId.current).maybeSingle();
+        const s = data?.state as { trades?: Trade[]; balance?: number; holdings?: Record<string, Holding> } | null;
+        if (!cancelled && s) {
+          if (Array.isArray(s.trades)) setTrades(s.trades);
+          if (typeof s.balance === "number") setBalance(s.balance);
+          if (s.holdings) setHoldings(s.holdings);
+        }
+      } catch (e) {
+        console.error("Demo portfolio load failed, using local cache:", e);
+      } finally {
+        remoteLoaded.current = true;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist to localStorage (fast cache) + backend (debounced, after remote load).
+  useEffect(() => {
+    const payload = { trades, balance, holdings };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch { /* ignore quota / disabled storage */ }
+    if (!remoteLoaded.current) return;
+    const t = setTimeout(() => {
+      supabase
+        .from("demo_state")
+        .upsert({ session_id: sessionId.current, state: JSON.parse(JSON.stringify(payload)), updated_at: new Date().toISOString() })
+        .then(({ error }) => { if (error) console.error("Demo portfolio save failed:", error); });
+    }, 600);
+    return () => clearTimeout(t);
   }, [trades, balance, holdings]);
 
-  const handleReset = () => {
+  const handleReset = async () => {
     setTrades([]);
     setBalance(0);
     setHoldings({});
@@ -77,6 +128,11 @@ const DemoTrading = () => {
     setQuantity(1);
     setTopUp("");
     localStorage.removeItem(STORAGE_KEY);
+    try {
+      await supabase.from("demo_state").delete().eq("session_id", sessionId.current);
+    } catch (e) {
+      console.error("Demo portfolio reset (backend) failed:", e);
+    }
     toast({
       title: "Demo trading reset",
       description: "Balance, holdings and order history cleared.",

@@ -1,59 +1,49 @@
 import { useMemo } from "react";
 import { Target, TrendingUp, TrendingDown } from "lucide-react";
-import { useHistoricalData, useStockQuotes, useNewsSentiment } from "@/hooks/useAngelOneData";
+import { useForecast, useNewsSentiment } from "@/hooks/useAngelOneData";
 
 interface PriceTargetProps {
   symbol: string;
 }
 
-// Compute daily log-return volatility (stdev) from close prices
-function computeVolatility(closes: number[]): number {
-  if (closes.length < 2) return 0.015; // fallback ~1.5% daily
-  const returns: number[] = [];
-  for (let i = 1; i < closes.length; i++) {
-    if (closes[i - 1] > 0) returns.push(Math.log(closes[i] / closes[i - 1]));
-  }
-  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-  const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / returns.length;
-  return Math.sqrt(variance) || 0.015;
-}
-
 const PriceTarget = ({ symbol }: PriceTargetProps) => {
-  const { data: historical } = useHistoricalData(symbol);
-  const { data: quotes } = useStockQuotes();
-  const liveStock = quotes?.data?.find((s) => s.symbol === symbol);
-  const stock = liveStock;
+  const { data: forecastData } = useForecast(symbol);
   const { data: sentiment } = useNewsSentiment(symbol);
   const score = sentiment?.score ?? 50;
   const label = sentiment?.label ?? "Neutral";
 
   const projections = useMemo(() => {
-    if (!stock) return null;
-    const price = stock.price;
-    const closes = (historical || []).map((d) => d.actual).filter((v): v is number => typeof v === "number");
-    const sigma = computeVolatility(closes); // daily stdev of log returns
+    const fc = forecastData?.forecast ?? [];
+    if (!forecastData || fc.length === 0) return null;
+    const price = forecastData.lastPrice;
+    const sigma = forecastData.sigma || 0.015;
 
-    // Sentiment bias: map score [0..100] -> daily drift [-0.15%..+0.15%]
-    const drift = ((score - 50) / 50) * 0.0015;
-
-    const buildHorizon = (days: number) => {
-      const expected = price * Math.exp(drift * days);
-      // ~1 stdev band over the horizon
-      const band = sigma * Math.sqrt(days);
-      const low = price * Math.exp(drift * days - band);
-      const high = price * Math.exp(drift * days + band);
-      const changePct = ((expected - price) / price) * 100;
-      return { expected, low, high, changePct };
+    // Day 7 comes straight from the backend SES + linear-regression + RSI/MACD model.
+    const day7 = fc[fc.length - 1];
+    const d7 = {
+      expected: day7.forecast,
+      low: day7.lower,
+      high: day7.upper,
+      changePct: ((day7.forecast - price) / price) * 100,
     };
 
-    return {
-      sigma,
-      d7: buildHorizon(7),
-      d30: buildHorizon(30),
+    // 30-day target: extrapolate the same model's per-trading-day growth rate.
+    const tradingDays = fc.length; // 7
+    const perDayGrowth = price > 0 ? Math.pow(day7.forecast / price, 1 / tradingDays) : 1;
+    const horizon30 = 30;
+    const expected30 = price * Math.pow(perDayGrowth, horizon30);
+    const band30 = expected30 * sigma * Math.sqrt(horizon30);
+    const d30 = {
+      expected: expected30,
+      low: expected30 - band30,
+      high: expected30 + band30,
+      changePct: ((expected30 - price) / price) * 100,
     };
-  }, [stock, historical, score]);
 
-  if (!stock || !projections) return null;
+    return { sigma, d7, d30 };
+  }, [forecastData]);
+
+  if (!projections) return null;
 
   const renderHorizon = (
     title: string,
@@ -109,8 +99,9 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
         {renderHorizon("Next 30 days", projections.d30)}
       </div>
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Estimated using historical log-return volatility with a sentiment-driven drift. ±1σ range
-        reflects expected variability, not guaranteed outcomes. Not financial advice.
+        Targets come from the same SES + linear-regression + RSI/MACD model used in the forecast chart.
+        The 30-day figure extrapolates the model's daily growth rate; ±1σ range reflects expected
+        variability, not guaranteed outcomes. Not financial advice.
       </p>
     </div>
   );

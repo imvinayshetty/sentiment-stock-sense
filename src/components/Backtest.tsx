@@ -42,6 +42,27 @@ const Backtest = ({ symbol }: BacktestProps) => {
             </div>
           </div>
 
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <div className="rounded-lg bg-secondary/50 p-3 text-center">
+              <div className="font-mono text-2xl font-bold text-foreground">
+                {data.mae !== null ? `₹${data.mae.toFixed(2)}` : "—"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Mean abs. error{data.mape !== null ? ` · ${data.mape.toFixed(1)}%` : ""}
+              </div>
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-3 text-center">
+              <div className={`font-mono text-2xl font-bold ${data.withinBandPct !== null && data.withinBandPct >= 68 ? "text-chart-up" : "text-chart-neutral"}`}>
+                {data.withinBandPct !== null ? `${data.withinBandPct}%` : "—"}
+              </div>
+              <div className="text-xs text-muted-foreground">Within ±1σ band</div>
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-3 text-center">
+              <div className="font-mono text-2xl font-bold text-chart-down">{data.evaluated - data.correct}</div>
+              <div className="text-xs text-muted-foreground">Incorrect calls</div>
+            </div>
+          </div>
+
           <div className="mt-4 space-y-2">
             {data.recent.map((r, idx) => (
               <div key={idx} className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-2 text-xs">
@@ -60,7 +81,9 @@ const Backtest = ({ symbol }: BacktestProps) => {
         </>
       )}
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Directional accuracy measures whether the forecast's up/down call matched the actual move. Not financial advice.
+        Directional accuracy measures whether the forecast's up/down call matched the actual move.
+        MAE is the average rupee error vs. actual close; "within ±1σ band" is how often the actual
+        landed inside the estimated range (≈68% expected for a well-calibrated model). Not financial advice.
       </p>
     </div>
   );

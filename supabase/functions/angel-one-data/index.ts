@@ -105,7 +105,15 @@ async function generateTotp(secret: string): Promise<string> {
   return (code % 1_000_000).toString().padStart(6, "0");
 }
 
-async function fetchAngelQuotes() {
+function angelHeaders(apiKey: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json", "Accept": "application/json",
+    "X-UserType": "USER", "X-SourceID": "WEB", "X-ClientLocalIP": "127.0.0.1",
+    "X-ClientPublicIP": "127.0.0.1", "X-MACAddress": "00:00:00:00:00:00", "X-PrivateKey": apiKey,
+  };
+}
+
+async function angelLogin(): Promise<string> {
   const apiKey = Deno.env.get("ANGEL_ONE_API_KEY");
   const clientId = Deno.env.get("ANGEL_ONE_CLIENT_ID");
   const mpin = Deno.env.get("ANGEL_ONE_PASSWORD");
@@ -113,30 +121,61 @@ async function fetchAngelQuotes() {
   if (!apiKey || !clientId || !mpin || !totpSecret) throw new Error("Angel One credentials missing");
 
   const otp = await generateTotp(totpSecret);
-  const baseHeaders: Record<string, string> = {
-    "Content-Type": "application/json", "Accept": "application/json",
-    "X-UserType": "USER", "X-SourceID": "WEB", "X-ClientLocalIP": "127.0.0.1",
-    "X-ClientPublicIP": "127.0.0.1", "X-MACAddress": "00:00:00:00:00:00", "X-PrivateKey": apiKey,
-  };
-
   const loginRes = await fetch(
     "https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword",
-    { method: "POST", headers: baseHeaders, body: JSON.stringify({ clientcode: clientId, password: mpin, totp: otp }) },
+    { method: "POST", headers: angelHeaders(apiKey), body: JSON.stringify({ clientcode: clientId, password: mpin, totp: otp }) },
   );
-  const loginData = await loginRes.json();
+  const loginData = await loginRes.json().catch(() => null);
   const jwt = loginData?.data?.jwtToken;
   if (!jwt) throw new Error(`Angel One login failed: ${JSON.stringify(loginData?.message ?? loginData)}`);
+  return jwt;
+}
 
-  const quoteRes = await fetch(
+// Reuse a cached JWT (6h TTL) instead of re-authenticating on every quote refresh.
+async function getAngelJwt(supabase: any, forceNew = false): Promise<string> {
+  if (!forceNew) {
+    try {
+      const { data } = await supabase
+        .from("angel_session").select("jwt,expires_at").eq("id", "singleton").maybeSingle();
+      if (data?.jwt && new Date(data.expires_at).getTime() > Date.now() + 60_000) return data.jwt;
+    } catch (_) { /* fall through to fresh login */ }
+  }
+  const jwt = await angelLogin();
+  try {
+    await supabase.from("angel_session").upsert({
+      id: "singleton",
+      jwt,
+      expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("angel_session cache write failed:", e);
+  }
+  return jwt;
+}
+
+async function fetchAngelQuotes(supabase: any) {
+  const apiKey = Deno.env.get("ANGEL_ONE_API_KEY");
+  if (!apiKey) throw new Error("Angel One credentials missing");
+
+  const body = JSON.stringify({ mode: "FULL", exchangeTokens: { NSE: Object.values(ANGEL_TOKENS) } });
+  const doQuote = (jwt: string) => fetch(
     "https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/",
-    {
-      method: "POST",
-      headers: { ...baseHeaders, Authorization: `Bearer ${jwt}` },
-      body: JSON.stringify({ mode: "FULL", exchangeTokens: { NSE: Object.values(ANGEL_TOKENS) } }),
-    },
+    { method: "POST", headers: { ...angelHeaders(apiKey), Authorization: `Bearer ${jwt}` }, body },
   );
-  const quoteData = await quoteRes.json();
-  const fetched: any[] = quoteData?.data?.fetched ?? [];
+
+  let jwt = await getAngelJwt(supabase);
+  let quoteRes = await doQuote(jwt);
+  let quoteData = await quoteRes.json().catch(() => null);
+  let fetched: any[] = quoteData?.data?.fetched ?? [];
+
+  // If the cached token was rejected, re-login once and retry.
+  if (!fetched.length && (quoteRes.status === 401 || /token|invalid|expired|unauthor/i.test(JSON.stringify(quoteData?.message ?? "")))) {
+    jwt = await getAngelJwt(supabase, true);
+    quoteRes = await doQuote(jwt);
+    quoteData = await quoteRes.json().catch(() => null);
+    fetched = quoteData?.data?.fetched ?? [];
+  }
   if (!fetched.length) throw new Error(`Angel One quote empty: ${JSON.stringify(quoteData?.message ?? quoteData)}`);
 
   return fetched.map((f) => {
@@ -179,6 +218,42 @@ function linearRegression(y: number[]): { slope: number; intercept: number } {
   return { slope, intercept: yMean - slope * xMean };
 }
 
+// ---------- Technical indicators (RSI, MACD) ----------
+function emaSeries(values: number[], period: number): number[] {
+  const k = 2 / (period + 1);
+  const out: number[] = [];
+  let e = values[0] ?? 0;
+  for (let i = 0; i < values.length; i++) {
+    e = i === 0 ? values[0] : values[i] * k + e * (1 - k);
+    out.push(e);
+  }
+  return out;
+}
+
+function computeRSI(closes: number[], period = 14): number {
+  if (closes.length < period + 1) return 50;
+  let gains = 0, losses = 0;
+  for (let i = closes.length - period; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff >= 0) gains += diff; else losses -= diff;
+  }
+  const avgGain = gains / period, avgLoss = losses / period;
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
+}
+
+function computeMACD(closes: number[]): { macd: number; signal: number; hist: number } {
+  if (closes.length < 26) return { macd: 0, signal: 0, hist: 0 };
+  const ema12 = emaSeries(closes, 12);
+  const ema26 = emaSeries(closes, 26);
+  const macdLine = closes.map((_, i) => ema12[i] - ema26[i]);
+  const signalSeries = emaSeries(macdLine.slice(25), 9);
+  const macd = macdLine[macdLine.length - 1];
+  const signal = signalSeries[signalSeries.length - 1];
+  return { macd, signal, hist: macd - signal };
+}
+
 function computeForecast(closes: number[]) {
   if (closes.length < 5) return null;
   const window = closes.slice(-30);
@@ -197,15 +272,27 @@ function computeForecast(closes: number[]) {
   const rMean = rets.reduce((a, b) => a + b, 0) / (rets.length || 1);
   const sigma = Math.sqrt(rets.reduce((a, b) => a + (b - rMean) ** 2, 0) / (rets.length || 1)) || 0.015;
 
+  // Technical-indicator directional bias, blended into the forecast drift.
+  const rsi = computeRSI(closes, 14);
+  const macd = computeMACD(closes);
   const lastPrice = window[n - 1];
-  const today = new Date();
+  const rsiBias = Math.max(-1, Math.min(1, (rsi - 50) / 50));          // overbought>0, oversold<0
+  const macdBias = Math.max(-1, Math.min(1, (macd.hist / (lastPrice || 1)) * 200)); // normalized histogram
+  const momentum = Math.max(-1, Math.min(1, 0.5 * rsiBias + 0.5 * macdBias)); // -1..1
+
+  // Build 7 trading days, skipping weekends (NSE closed Sat/Sun).
   const out = [];
-  for (let i = 1; i <= 7; i++) {
-    const linPred = intercept + slope * (n - 1 + i);
-    const forecast = 0.6 * linPred + 0.4 * s;
-    const band = forecast * sigma * Math.sqrt(i);
-    const d = new Date(today);
-    d.setDate(d.getDate() + i);
+  const d = new Date();
+  let tradingDay = 0;
+  while (out.length < 7) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) continue; // skip Sun/Sat
+    tradingDay++;
+    const linPred = intercept + slope * (n - 1 + tradingDay);
+    // Base SES/LR forecast nudged by indicator momentum (max ~0.1%/day).
+    const forecast = (0.6 * linPred + 0.4 * s) * (1 + momentum * 0.001 * tradingDay);
+    const band = forecast * sigma * Math.sqrt(tradingDay);
     out.push({
       date: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
       isoDate: d.toISOString().slice(0, 10),
@@ -214,7 +301,17 @@ function computeForecast(closes: number[]) {
       upper: Number((forecast + band).toFixed(2)),
     });
   }
-  return { lastPrice, sigma, forecast: out };
+  return {
+    lastPrice,
+    sigma,
+    indicators: {
+      rsi: Number(rsi.toFixed(1)),
+      macd: Number(macd.macd.toFixed(2)),
+      macdSignal: Number(macd.signal.toFixed(2)),
+      momentum: Number(momentum.toFixed(3)),
+    },
+    forecast: out,
+  };
 }
 
 function isoToCloseMap(candles: any[]): Record<string, number> {
@@ -366,7 +463,7 @@ serve(async (req) => {
       // During market hours, prefer Angel One live quotes; fall back to Yahoo on any failure.
       if (market.status === "OPEN") {
         try {
-          data = await fetchAngelQuotes();
+          data = await fetchAngelQuotes(getSupabase());
         } catch (error) {
           console.error("Angel One quotes failed, falling back to Yahoo:", error);
           data = [];
@@ -450,6 +547,9 @@ serve(async (req) => {
           base_price: result.lastPrice,
           predicted_price: day7.forecast,
           direction: day7.forecast >= result.lastPrice ? "up" : "down",
+          lower_bound: day7.lower,
+          upper_bound: day7.upper,
+          sigma: result.sigma,
         }, { onConflict: "symbol,predicted_at,horizon_date", ignoreDuplicates: true });
         await reconcileBacktest(supabase, symbol, candles);
       } catch (e) {
@@ -469,11 +569,36 @@ serve(async (req) => {
       const evaluated = rows ?? [];
       const correct = evaluated.filter((r: any) => r.correct).length;
       const accuracy = evaluated.length ? Math.round((correct / evaluated.length) * 100) : null;
+
+      // Mean Absolute Error and % of actuals that landed within the ±1σ band.
+      let absErrSum = 0, pctErrSum = 0, errCount = 0;
+      let withinBand = 0, bandCount = 0;
+      for (const r of evaluated) {
+        if (r.actual_price != null) {
+          const err = Math.abs(Number(r.predicted_price) - Number(r.actual_price));
+          absErrSum += err;
+          if (Number(r.actual_price) > 0) pctErrSum += (err / Number(r.actual_price)) * 100;
+          errCount++;
+          if (r.lower_bound != null && r.upper_bound != null) {
+            bandCount++;
+            if (Number(r.actual_price) >= Number(r.lower_bound) && Number(r.actual_price) <= Number(r.upper_bound)) {
+              withinBand++;
+            }
+          }
+        }
+      }
+      const mae = errCount ? Number((absErrSum / errCount).toFixed(2)) : null;
+      const mape = errCount ? Number((pctErrSum / errCount).toFixed(2)) : null;
+      const withinBandPct = bandCount ? Math.round((withinBand / bandCount) * 100) : null;
+
       return new Response(JSON.stringify({
         success: true,
         evaluated: evaluated.length,
         correct,
         directionalAccuracy: accuracy,
+        mae,
+        mape,
+        withinBandPct,
         recent: evaluated.slice(-10).reverse(),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
