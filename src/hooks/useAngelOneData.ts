@@ -87,6 +87,7 @@ export interface SentimentPayload {
   label: string;
   buzz: number;
   articles: SentimentArticle[];
+  scoredBy: "groq" | "default";
 }
 
 async function callFunction(fn: string, params: Record<string, string> = {}) {
@@ -110,6 +111,7 @@ export function useNewsSentiment(symbol: string) {
         label: result.label,
         buzz: result.buzz ?? 0,
         articles: result.articles ?? [],
+        scoredBy: (result.scored_by ?? result.scoredBy ?? "default") as "groq" | "default",
       };
     },
     enabled: !!symbol,
@@ -127,9 +129,16 @@ export interface ForecastPoint {
   lower: number;
   upper: number;
 }
+export interface ForecastIndicators {
+  rsi: number;
+  macd: number;
+  macdSignal: number;
+  momentum: number;
+}
 export interface ForecastPayload {
   lastPrice: number;
   sigma: number;
+  indicators?: ForecastIndicators;
   forecast: ForecastPoint[];
 }
 
@@ -139,7 +148,7 @@ export function useForecast(symbol: string) {
     queryFn: async () => {
       const result = await callFunction("angel-one-data", { action: "forecast", symbol });
       if (!result.success) throw new Error(result.error);
-      return { lastPrice: result.lastPrice, sigma: result.sigma, forecast: result.forecast ?? [] };
+      return { lastPrice: result.lastPrice, sigma: result.sigma, indicators: result.indicators, forecast: result.forecast ?? [] };
     },
     enabled: !!symbol,
     staleTime: 10 * 60 * 1000,
@@ -163,6 +172,9 @@ export interface BacktestPayload {
   evaluated: number;
   correct: number;
   directionalAccuracy: number | null;
+  mae: number | null;
+  mape: number | null;
+  withinBandPct: number | null;
   recent: BacktestRow[];
 }
 
@@ -176,6 +188,9 @@ export function useBacktest(symbol?: string) {
         evaluated: result.evaluated ?? 0,
         correct: result.correct ?? 0,
         directionalAccuracy: result.directionalAccuracy ?? null,
+        mae: result.mae ?? null,
+        mape: result.mape ?? null,
+        withinBandPct: result.withinBandPct ?? null,
         recent: result.recent ?? [],
       };
     },
