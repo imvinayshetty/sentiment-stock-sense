@@ -1,6 +1,5 @@
 import { useNewsSentiment } from "@/hooks/useAngelOneData";
 import { TrendingUp, TrendingDown, Minus, ExternalLink } from "lucide-react";
-import { createElement } from "react";
 
 interface NewsFeedProps {
   symbol: string;
@@ -27,27 +26,29 @@ const NewsFeed = ({ symbol }: NewsFeedProps) => {
       <div className="space-y-3">
         {news.map((item) => {
           const hasLink = Boolean(item.link);
-          return createElement(
-            hasLink ? "a" : "div",
-            {
-              key: item.link || `${item.title}-${item.source}`,
-              ...(hasLink
-                ? { href: item.link, target: "_blank", rel: "noopener noreferrer" }
-                : {}),
-              className: `flex gap-3 rounded-lg border border-border bg-secondary/30 p-3 ${
+          const Wrapper = hasLink ? "a" : "div";
+          const wrapperProps = hasLink
+            ? { href: item.link, target: "_blank", rel: "noopener noreferrer" }
+            : {};
+          return (
+            <Wrapper
+              key={item.link || `${item.title}-${item.source}`}
+              {...wrapperProps}
+              className={`flex gap-3 rounded-lg border border-border bg-secondary/30 p-3 ${
                 hasLink ? "transition-colors hover:bg-secondary/60" : ""
-              }`,
-            },
-            <div className="mt-0.5">{sentimentIcon(item.sentiment)}</div>,
-            <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-medium text-foreground">{item.title}</h4>
-              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{item.source}</span>
-                <span>·</span>
-                <span>{item.time}</span>
-                {hasLink && <ExternalLink className="ml-auto h-3 w-3" />}
+              }`}
+            >
+              <div className="mt-0.5">{sentimentIcon(item.sentiment)}</div>
+              <div className="min-w-0 flex-1">
+                <h4 className="text-sm font-medium text-foreground">{item.title}</h4>
+                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{item.source}</span>
+                  <span>·</span>
+                  <span>{item.time}</span>
+                  {hasLink && <ExternalLink className="ml-auto h-3 w-3" />}
+                </div>
               </div>
-            </div>,
+            </Wrapper>
           );
         })}
       </div>

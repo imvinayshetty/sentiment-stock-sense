@@ -1,9 +1,24 @@
+import { useEffect, useRef, useState } from "react";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
+import type { StockQuote } from "@/lib/stockData";
 
 const TickerBar = () => {
   const { data: quotes } = useStockQuotes();
   const liveStocks = quotes?.data ?? [];
-  const stocks = liveStocks;
+
+  // Freeze the ticker data so a background 45s refetch doesn't restart the
+  // scroll animation mid-cycle. We only swap in fresh data when the count
+  // changes (initial load) — price text otherwise updates on the next mount.
+  const [stocks, setStocks] = useState<StockQuote[]>(liveStocks);
+  const lenRef = useRef(liveStocks.length);
+  useEffect(() => {
+    if (liveStocks.length && liveStocks.length !== lenRef.current) {
+      lenRef.current = liveStocks.length;
+      setStocks(liveStocks);
+    } else if (liveStocks.length && stocks.length === 0) {
+      setStocks(liveStocks);
+    }
+  }, [liveStocks, stocks.length]);
 
   if (!stocks.length) {
     return (
