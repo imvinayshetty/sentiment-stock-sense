@@ -1,4 +1,4 @@
-import { useStockQuotes } from "@/hooks/useAngelOneData";
+import { useStockQuotes, useForecast } from "@/hooks/useAngelOneData";
 import { getStockMeta } from "@/lib/stockData";
 import { ArrowUpRight, ArrowDownRight, BarChart3, DollarSign, Activity, TrendingUp, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 
@@ -8,6 +8,7 @@ interface StockDetailProps {
 
 const StockDetail = ({ symbol }: StockDetailProps) => {
   const { data: quotes } = useStockQuotes();
+  const { data: forecastData } = useForecast(symbol);
   const liveStock = quotes?.data?.find((s) => s.symbol === symbol);
   const marketOpen = quotes?.marketStatus === "OPEN";
   const stockMeta = getStockMeta(symbol);
@@ -34,16 +35,18 @@ const StockDetail = ({ symbol }: StockDetailProps) => {
 
   const isUp = stock.change >= 0;
 
-  // Recommended intraday levels: sell near the day's high, buy near the day's low.
-  const recommendedSell = stock.high;
-  const recommendedBuy = stock.low;
+  // Forward-looking levels from the 7-day forecast band: lower = support (buy zone),
+  // upper = resistance (sell zone). Only shown when a forecast is available.
+  const day7 = forecastData?.forecast?.[forecastData.forecast.length - 1];
+  const recommendedBuy = day7?.lower;
+  const recommendedSell = day7?.upper;
 
   const stats = [
     { label: "Open", value: `₹${stock.open.toFixed(2)}`, icon: DollarSign },
     { label: "High", value: `₹${stock.high.toFixed(2)}`, icon: TrendingUp },
     { label: "Low", value: `₹${stock.low.toFixed(2)}`, icon: Activity },
-    { label: "Rec. Sell", value: `₹${recommendedSell.toFixed(2)}`, icon: ArrowUpCircle },
-    { label: "Rec. Buy", value: `₹${recommendedBuy.toFixed(2)}`, icon: ArrowDownCircle },
+    ...(recommendedSell != null ? [{ label: "Sell (7d resist.)", value: `₹${recommendedSell.toFixed(2)}`, icon: ArrowUpCircle }] : []),
+    ...(recommendedBuy != null ? [{ label: "Buy (7d support)", value: `₹${recommendedBuy.toFixed(2)}`, icon: ArrowDownCircle }] : []),
     { label: "Volume", value: stock.volume, icon: BarChart3 },
     { label: "Exchange", value: stock.exchange || "NSE", icon: DollarSign },
   ];
