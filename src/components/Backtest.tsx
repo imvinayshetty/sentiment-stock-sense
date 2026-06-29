@@ -81,7 +81,9 @@ const Backtest = ({ symbol }: BacktestProps) => {
         </>
       )}
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Directional accuracy measures whether the forecast's up/down call matched the actual move. Not financial advice.
+        Directional accuracy measures whether the forecast's up/down call matched the actual move.
+        MAE is the average rupee error vs. actual close; "within ±1σ band" is how often the actual
+        landed inside the estimated range (≈68% expected for a well-calibrated model). Not financial advice.
       </p>
     </div>
   );
