@@ -113,7 +113,9 @@ async function fetchNews(query: string, symbol: string): Promise<RawArticle[]> {
 }
 
 async function scoreWithGroq(apiKey: string, company: string, headlines: string[]): Promise<{ scores: number[]; overall: number }> {
-  const prompt = `You are a financial sentiment analyst. For the stock "${company}", classify each headline's sentiment toward the stock price on a scale of -1 (very bearish), 0 (neutral), to 1 (very bullish). Return ONLY JSON: {"scores":[number,...]} with one number per headline, same order.\n\nHeadlines:\n${headlines.map((h, i) => `${i + 1}. ${h}`).join("\n")}`;
+  // Cap each headline to 120 chars to stay well within Groq's context window.
+  const capped = headlines.map((h) => h.slice(0, 120));
+  const prompt = `You are a financial sentiment analyst. For the stock "${company}", classify each headline's sentiment toward the stock price on a scale of -1 (very bearish), 0 (neutral), to 1 (very bullish). Return ONLY JSON: {"scores":[number,...]} with one number per headline, same order.\n\nHeadlines:\n${capped.map((h, i) => `${i + 1}. ${h}`).join("\n")}`;
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
