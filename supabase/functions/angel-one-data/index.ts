@@ -569,11 +569,36 @@ serve(async (req) => {
       const evaluated = rows ?? [];
       const correct = evaluated.filter((r: any) => r.correct).length;
       const accuracy = evaluated.length ? Math.round((correct / evaluated.length) * 100) : null;
+
+      // Mean Absolute Error and % of actuals that landed within the ±1σ band.
+      let absErrSum = 0, pctErrSum = 0, errCount = 0;
+      let withinBand = 0, bandCount = 0;
+      for (const r of evaluated) {
+        if (r.actual_price != null) {
+          const err = Math.abs(Number(r.predicted_price) - Number(r.actual_price));
+          absErrSum += err;
+          if (Number(r.actual_price) > 0) pctErrSum += (err / Number(r.actual_price)) * 100;
+          errCount++;
+          if (r.lower_bound != null && r.upper_bound != null) {
+            bandCount++;
+            if (Number(r.actual_price) >= Number(r.lower_bound) && Number(r.actual_price) <= Number(r.upper_bound)) {
+              withinBand++;
+            }
+          }
+        }
+      }
+      const mae = errCount ? Number((absErrSum / errCount).toFixed(2)) : null;
+      const mape = errCount ? Number((pctErrSum / errCount).toFixed(2)) : null;
+      const withinBandPct = bandCount ? Math.round((withinBand / bandCount) * 100) : null;
+
       return new Response(JSON.stringify({
         success: true,
         evaluated: evaluated.length,
         correct,
         directionalAccuracy: accuracy,
+        mae,
+        mape,
+        withinBandPct,
         recent: evaluated.slice(-10).reverse(),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
