@@ -40,17 +40,24 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
       )
     : [];
 
-  // Auto-select the best match as the user types so StockDetail updates live
+  // Auto-select the best match as the user types so StockDetail updates live.
+  // Debounced (300ms) and keyed on the query only, so mid-keystroke filtering
+  // doesn't trigger a burst of onSelect → quote/forecast refetches.
   useEffect(() => {
-    if (!q || filtered.length === 0) return;
-    const exact = filtered.find((s) => s.symbol.toLowerCase() === q);
-    const startsWith = filtered.find((s) => s.symbol.toLowerCase().startsWith(q));
-    const best = exact ?? startsWith ?? filtered[0];
-    if (best && best.symbol !== selectedSymbol) {
-      onSelect(best.symbol);
-    }
+    if (!q) return;
+    const handle = setTimeout(() => {
+      const matches = stocks.filter(
+        (s) => s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q),
+      );
+      if (matches.length === 0) return;
+      const exact = matches.find((s) => s.symbol.toLowerCase() === q);
+      const startsWith = matches.find((s) => s.symbol.toLowerCase().startsWith(q));
+      const best = exact ?? startsWith ?? matches[0];
+      if (best && best.symbol !== selectedSymbol) onSelect(best.symbol);
+    }, 300);
+    return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, filtered.length]);
+  }, [q]);
 
   const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
   const topBuy = ranked.slice(0, 10);

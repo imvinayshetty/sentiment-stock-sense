@@ -99,7 +99,13 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
           analysis of the {tweets} headline{tweets === 1 ? "" : "s"} above. No buy/sell signal is shown.
         </div>
       )}
-      {!isDefault && (
+      {!isDefault && confidence < 30 && (
+        <div className="mt-4 rounded-lg border border-chart-neutral/30 bg-chart-neutral/10 p-3 text-xs text-muted-foreground">
+          Signal unclear — insufficient data. Confidence is too low ({confidence}%) to show a reliable
+          buy/sell recommendation.
+        </div>
+      )}
+      {!isDefault && confidence >= 30 && (
       <div className={`mt-5 flex items-start gap-3 rounded-lg border p-3 ${recommendation.bg}`}>
         <recommendation.Icon className={`mt-0.5 h-5 w-5 ${recommendation.color}`} />
         <div className="min-w-0 flex-1">

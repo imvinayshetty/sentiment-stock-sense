@@ -23,6 +23,9 @@ const Index = () => {
   const handleRefresh = () => {
     refetch();
     queryClient.invalidateQueries({ queryKey: ["historical", selectedSymbol] });
+    queryClient.invalidateQueries({ queryKey: ["forecast", selectedSymbol] });
+    queryClient.invalidateQueries({ queryKey: ["news-sentiment", selectedSymbol] });
+    queryClient.invalidateQueries({ queryKey: ["backtest", selectedSymbol] });
   };
 
   return (

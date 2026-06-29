@@ -22,13 +22,13 @@ export interface StockDirectoryEntry {
 export interface PredictionData {
   date: string;
   actual?: number;
-  arima?: number;
-  lstm?: number;
-  linearReg?: number;
   open?: number;
   high?: number;
   low?: number;
   volume?: number;
+  forecast?: number;
+  upper?: number;
+  lower?: number;
 }
 
 export interface NewsItem {

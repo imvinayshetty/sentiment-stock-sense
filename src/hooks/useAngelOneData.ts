@@ -115,7 +115,7 @@ export function useNewsSentiment(symbol: string) {
       };
     },
     enabled: !!symbol,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 55 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
   });
@@ -152,7 +152,7 @@ export function useForecast(symbol: string) {
     },
     enabled: !!symbol,
     staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
     retry: 1,
   });
 }

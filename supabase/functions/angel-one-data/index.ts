@@ -2,7 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  // Lock to ALLOWED_ORIGIN in production; defaults to "*" when unset.
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") ?? "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -231,16 +232,26 @@ function emaSeries(values: number[], period: number): number[] {
 }
 
 function computeRSI(closes: number[], period = 14): number {
-  if (closes.length < period + 1) return 50;
-  let gains = 0, losses = 0;
-  for (let i = closes.length - period; i < closes.length; i++) {
+  // Wilder's smoothing RSI (the standard used by charting platforms).
+  if (closes.length < period + 2) return 50;
+  let avgGain = 0, avgLoss = 0;
+  // Seed with the first `period` deltas.
+  for (let i = 1; i <= period; i++) {
     const diff = closes[i] - closes[i - 1];
-    if (diff >= 0) gains += diff; else losses -= diff;
+    if (diff >= 0) avgGain += diff; else avgLoss -= diff;
   }
-  const avgGain = gains / period, avgLoss = losses / period;
+  avgGain /= period;
+  avgLoss /= period;
+  // Wilder's exponential smoothing across the remaining candles.
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff >= 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
   if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - 100 / (1 + rs);
+  return 100 - 100 / (1 + avgGain / avgLoss);
 }
 
 function computeMACD(closes: number[]): { macd: number; signal: number; hist: number } {
@@ -329,7 +340,14 @@ function computeForecast(closes: number[]) {
 
 function isoToCloseMap(candles: any[]): Record<string, number> {
   const map: Record<string, number> = {};
-  for (const c of candles) map[String(c[0]).slice(0, 10)] = Number(c[4]);
+  for (const c of candles) {
+    // c[0] is normally an ISO string, but defensively handle a raw Unix timestamp.
+    const raw = c[0];
+    const iso = isNaN(Number(raw))
+      ? String(raw).slice(0, 10)
+      : new Date(Number(raw) * 1000).toISOString().slice(0, 10);
+    map[iso] = Number(c[4]);
+  }
   return map;
 }
 
@@ -540,7 +558,7 @@ serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const chart = await fetchChart(stockInfo.yahooSymbol, "3mo", "1d");
+      const chart = await fetchChart(stockInfo.yahooSymbol, "6mo", "1d");
       const candles = mapHistorical(chart);
       const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
       const result = computeForecast(closes);

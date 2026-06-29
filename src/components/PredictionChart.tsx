@@ -61,27 +61,27 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
       </div>
       <ResponsiveContainer width="100%" height={350}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 18% 18%)" />
-          <XAxis dataKey="date" tick={{ fill: "hsl(215 15% 55%)", fontSize: 12 }} tickLine={false} axisLine={false} />
-          <YAxis tick={{ fill: "hsl(215 15% 55%)", fontSize: 12 }} tickLine={false} axisLine={false} domain={["auto", "auto"]} />
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <XAxis dataKey="date" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} domain={["auto", "auto"]} />
           <Tooltip
             contentStyle={{
-              backgroundColor: "hsl(220 22% 10%)",
-              border: "1px solid hsl(220 18% 18%)",
+              backgroundColor: "hsl(var(--popover))",
+              border: "1px solid hsl(var(--border))",
               borderRadius: "8px",
-              color: "hsl(210 20% 92%)",
+              color: "hsl(var(--foreground))",
               fontSize: "13px",
               fontFamily: "JetBrains Mono, monospace",
             }}
             formatter={(value: number) => [`₹${value.toFixed(2)}`, undefined]}
           />
           <Legend wrapperStyle={{ fontSize: "12px", fontFamily: "Inter" }} />
-          <Line type="monotone" dataKey="actual" name="Close" stroke="hsl(210 20% 92%)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
-          <Line type="monotone" dataKey="high" name="High" stroke="hsl(160 100% 45%)" strokeWidth={1.5} dot={false} />
-          <Line type="monotone" dataKey="low" name="Low" stroke="hsl(0 72% 55%)" strokeWidth={1.5} dot={false} />
-          <Line type="monotone" dataKey="forecast" name="Forecast" stroke="hsl(45 90% 55%)" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls />
-          <Line type="monotone" dataKey="upper" name="Upper band" stroke="hsl(45 90% 55%)" strokeWidth={1} strokeOpacity={0.4} dot={false} connectNulls />
-          <Line type="monotone" dataKey="lower" name="Lower band" stroke="hsl(45 90% 55%)" strokeWidth={1} strokeOpacity={0.4} dot={false} connectNulls />
+          <Line type="monotone" dataKey="actual" name="Close" stroke="hsl(var(--foreground))" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+          <Line type="monotone" dataKey="high" name="High" stroke="hsl(var(--chart-up))" strokeWidth={1.5} dot={false} />
+          <Line type="monotone" dataKey="low" name="Low" stroke="hsl(var(--chart-down))" strokeWidth={1.5} dot={false} />
+          <Line type="monotone" dataKey="forecast" name="Forecast" stroke="hsl(var(--chart-neutral))" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls />
+          <Line type="monotone" dataKey="upper" name="Upper band" stroke="hsl(var(--chart-neutral))" strokeWidth={1} strokeOpacity={0.4} dot={false} connectNulls />
+          <Line type="monotone" dataKey="lower" name="Lower band" stroke="hsl(var(--chart-neutral))" strokeWidth={1} strokeOpacity={0.4} dot={false} connectNulls />
         </LineChart>
       </ResponsiveContainer>
     </div>
