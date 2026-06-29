@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   ArrowDownCircle,
@@ -157,50 +157,6 @@ const DemoTrading = () => {
   // Reconstruct portfolio NAV (net asset value) history client-side by replaying
   // the timestamped trade log. Holdings are marked to the last execution price
   // known up to that point; a final "Now" point uses live prices.
-  const navHistory = useMemo(() => {
-    if (trades.length === 0) return [] as { time: string; value: number }[];
-    const chronological = [...trades].reverse(); // stored newest-first
-    const positions: Record<string, number> = {};
-    const lastPrice: Record<string, number> = {};
-    const points: { time: string; value: number }[] = [];
-    // Back-calculate the starting cash by reversing the effect of every trade
-    // on the current balance, so NAV = cash + holdings value at each point.
-    let portfolioCash = balance;
-    for (const t of trades) {
-      if (t.side === "BUY") portfolioCash += t.total;
-      else portfolioCash -= t.total;
-    }
-    for (const t of chronological) {
-      if (t.side === "BUY") {
-        portfolioCash -= t.total;
-        positions[t.symbol] = (positions[t.symbol] ?? 0) + t.quantity;
-      } else {
-        portfolioCash += t.total;
-        positions[t.symbol] = (positions[t.symbol] ?? 0) - t.quantity;
-        if (positions[t.symbol] <= 0) delete positions[t.symbol];
-      }
-      lastPrice[t.symbol] = t.price;
-      const holdingsValue = Object.entries(positions).reduce(
-        (sum, [sym, qty]) => sum + qty * (lastPrice[sym] ?? 0),
-        0,
-      );
-      points.push({ time: t.time, value: Number((portfolioCash + holdingsValue).toFixed(2)) });
-    }
-    // Append a live "Now" point using current market prices
-    const liveHoldings = Object.entries(positions).reduce(
-      (sum, [sym, qty]) => sum + qty * (priceMap.get(sym) ?? lastPrice[sym] ?? 0),
-      0,
-    );
-    points.push({ time: "Now", value: Number((balance + liveHoldings).toFixed(2)) });
-    return points;
-  }, [trades, balance, priceMap]);
-
-  // Colour the NAV chart by overall direction: green when up, red when down.
-  const navIsUp =
-    navHistory.length > 1 &&
-    navHistory[navHistory.length - 1].value >= navHistory[0].value;
-  const navColor = navIsUp ? "hsl(var(--chart-up))" : "hsl(var(--chart-down))";
-
   // Keep the selected stock's price in sync with live quotes
   const liveSelected = selected
     ? stocks.find((s) => s.symbol === selected.symbol) ?? selected
