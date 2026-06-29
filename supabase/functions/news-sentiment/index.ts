@@ -177,7 +177,7 @@ serve(async (req) => {
     const raw = await fetchNews(company, symbol);
 
     if (raw.length === 0) {
-      const fallback = { symbol, score: 50, label: "Neutral", buzz: 0, articles: [] };
+      const fallback = { symbol, score: 50, label: "Neutral", buzz: 0, articles: [], scored_by: "default" };
       await supabase.from("sentiment_cache").upsert({ ...fallback, updated_at: new Date().toISOString() });
       return new Response(JSON.stringify({ success: true, cached: false, ...fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -187,11 +187,13 @@ serve(async (req) => {
     const groqKey = Deno.env.get("GROQ_API_KEY");
     let scores: number[] = [];
     let overall = 50;
+    let scoredBy: "groq" | "default" = "default";
     if (groqKey) {
       try {
         const result = await scoreWithGroq(groqKey, company, raw.map((a) => a.title));
         scores = result.scores;
         overall = result.overall;
+        scoredBy = "groq";
       } catch (e) {
         console.error("Groq scoring failed:", e);
       }
@@ -208,6 +210,7 @@ serve(async (req) => {
       label: labelFor(overall),
       buzz: raw.length,
       articles,
+      scored_by: scoredBy,
     };
     await supabase.from("sentiment_cache").upsert({ ...payload, updated_at: new Date().toISOString() });
 
