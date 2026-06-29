@@ -520,8 +520,8 @@ serve(async (req) => {
 
       if (!data.length) {
         const entries = Object.entries(STOCK_TOKENS);
-        const results = await Promise.all(
-        entries.map(async ([stockSymbol, info]) => {
+        // Batch (5 at a time) to avoid Yahoo rate-limiting 45 simultaneous requests.
+        const results = await fetchInBatches(entries, 5, async ([stockSymbol, info]) => {
           try {
             const chart = await fetchChart(info.yahooSymbol, "5d", "1d");
             return mapQuote(stockSymbol, info, chart);
@@ -529,8 +529,7 @@ serve(async (req) => {
             console.error(`Quote fetch failed for ${stockSymbol}:`, error);
             return null;
           }
-        }),
-        );
+        });
         data = results.filter((item): item is NonNullable<typeof item> => Boolean(item) && item.price > 0);
       }
 
