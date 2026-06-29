@@ -41,6 +41,20 @@ const StockDetail = ({ symbol }: StockDetailProps) => {
   const recommendedBuy = day7?.lower;
   const recommendedSell = day7?.upper;
 
+  // Technical-indicator signal row (RSI / MACD) + combined momentum confidence label.
+  const ind = forecastData?.indicators;
+  const rsiLabel = ind ? (ind.rsi >= 70 ? "Overbought" : ind.rsi <= 30 ? "Oversold" : "Neutral") : null;
+  const macdLabel = ind ? (ind.macd >= ind.macdSignal ? "Bullish cross" : "Bearish cross") : null;
+  const momentum = ind?.momentum ?? 0;
+  const signalLabel =
+    momentum >= 0.3 ? "Strong Bullish Signal"
+    : momentum >= 0.1 ? "Mild Bullish Signal"
+    : momentum <= -0.3 ? "Strong Bearish Signal"
+    : momentum <= -0.1 ? "Mild Bearish Signal"
+    : "Neutral / Weak Signal";
+  const signalColor =
+    momentum >= 0.1 ? "text-chart-up" : momentum <= -0.1 ? "text-chart-down" : "text-muted-foreground";
+
   const stats = [
     { label: "Open", value: `₹${stock.open.toFixed(2)}`, icon: DollarSign },
     { label: "High", value: `₹${stock.high.toFixed(2)}`, icon: TrendingUp },
@@ -84,6 +98,20 @@ const StockDetail = ({ symbol }: StockDetailProps) => {
           </div>
         ))}
       </div>
+      {ind && (
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-border bg-secondary/30 px-4 py-3 text-xs">
+          <span className="text-muted-foreground">
+            RSI(14): <span className="font-mono font-semibold text-foreground">{ind.rsi}</span>{" "}
+            <span className="text-muted-foreground">({rsiLabel})</span>
+          </span>
+          <span className="text-muted-foreground">
+            MACD: <span className="font-mono font-semibold text-foreground">{ind.macd}</span> /{" "}
+            <span className="font-mono text-foreground">{ind.macdSignal}</span>{" "}
+            <span className="text-muted-foreground">({macdLabel})</span>
+          </span>
+          <span className={`ml-auto font-semibold ${signalColor}`}>{signalLabel}</span>
+        </div>
+      )}
     </div>
   );
 };
