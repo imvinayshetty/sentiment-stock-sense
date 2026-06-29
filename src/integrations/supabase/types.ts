@@ -110,6 +110,7 @@ export type Database = {
           buzz: number
           label: string
           score: number
+          scored_by: string
           symbol: string
           updated_at: string
         }
@@ -118,6 +119,7 @@ export type Database = {
           buzz?: number
           label: string
           score: number
+          scored_by?: string
           symbol: string
           updated_at?: string
         }
@@ -126,6 +128,7 @@ export type Database = {
           buzz?: number
           label?: string
           score?: number
+          scored_by?: string
           symbol?: string
           updated_at?: string
         }
