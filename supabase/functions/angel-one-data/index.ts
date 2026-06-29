@@ -339,10 +339,11 @@ async function reconcileBacktest(supabase: any, symbol: string, candles: any[]) 
   const { data: pending } = await supabase
     .from("prediction_log").select("*").eq("symbol", symbol).is("actual_price", null);
   if (!pending?.length) return;
+  const today = new Date().toISOString().slice(0, 10);
   for (const row of pending) {
-    // Find the first available close strictly after the horizon date so an
-    // in-progress horizon day is never reconciled before its market close.
-    const target = isoDates.find((d) => d > row.horizon_date);
+    // Find the first available close on/after the horizon date, but never use
+    // today's in-progress candle because intraday Yahoo candles are last-traded prices.
+    const target = isoDates.find((d) => d >= row.horizon_date && d < today);
     if (!target) continue;
     const actual = closeByDate[target];
     const wentUp = actual > Number(row.base_price);
