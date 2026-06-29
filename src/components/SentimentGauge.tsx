@@ -10,6 +10,7 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
   const score = data?.score ?? 50;
   const label = data?.label ?? "Neutral";
   const tweets = data?.buzz ?? 0;
+  const isDefault = data?.scoredBy !== "groq";
 
   if (isLoading) {
     return (
@@ -87,9 +88,18 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
           <p className="text-sm text-muted-foreground">
             Based on <span className="font-mono text-foreground">{tweets.toLocaleString()}</span> recent news articles
           </p>
-          <p className="text-xs text-muted-foreground">Powered by Google News + AI sentiment scoring</p>
+          <p className="text-xs text-muted-foreground">
+            {isDefault ? "AI sentiment scoring unavailable — showing neutral default" : "Powered by Google News + AI sentiment scoring"}
+          </p>
         </div>
       </div>
+      {isDefault && (
+        <div className="mt-4 rounded-lg border border-chart-neutral/30 bg-chart-neutral/10 p-3 text-xs text-muted-foreground">
+          Sentiment scoring is unavailable right now, so this score is a neutral default rather than an
+          analysis of the {tweets} headline{tweets === 1 ? "" : "s"} above. No buy/sell signal is shown.
+        </div>
+      )}
+      {!isDefault && (
       <div className={`mt-5 flex items-start gap-3 rounded-lg border p-3 ${recommendation.bg}`}>
         <recommendation.Icon className={`mt-0.5 h-5 w-5 ${recommendation.color}`} />
         <div className="min-w-0 flex-1">
@@ -112,6 +122,7 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
           </p>
         </div>
       </div>
+      )}
     </div>
   );
 };
