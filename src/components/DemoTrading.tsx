@@ -172,24 +172,43 @@ const DemoTrading = () => {
     const lots: Record<string, number> = {};
     const lastPrice: Record<string, number> = {};
     const points: { time: string; value: number }[] = [];
+    // Back-calculate the starting cash by reversing the effect of every trade
+    // on the current balance, so NAV = cash + holdings value at each point.
+    let cash = balance;
+    for (const t of trades) {
+      if (t.side === "BUY") cash += t.total;
+      else cash -= t.total;
+    }
     for (const t of chronological) {
-      lots[t.symbol] = (lots[t.symbol] ?? 0) + (t.side === "BUY" ? t.quantity : -t.quantity);
-      if (lots[t.symbol] <= 0) delete lots[t.symbol];
+      if (t.side === "BUY") {
+        cash -= t.total;
+        lots[t.symbol] = (lots[t.symbol] ?? 0) + t.quantity;
+      } else {
+        cash += t.total;
+        lots[t.symbol] = (lots[t.symbol] ?? 0) - t.quantity;
+        if (lots[t.symbol] <= 0) delete lots[t.symbol];
+      }
       lastPrice[t.symbol] = t.price;
-      const value = Object.entries(lots).reduce(
+      const holdingsValue = Object.entries(lots).reduce(
         (sum, [sym, qty]) => sum + qty * (lastPrice[sym] ?? 0),
         0,
       );
-      points.push({ time: t.time, value: Number(value.toFixed(2)) });
+      points.push({ time: t.time, value: Number((cash + holdingsValue).toFixed(2)) });
     }
     // Append a live "Now" point using current market prices
-    const liveValue = Object.entries(lots).reduce(
+    const liveHoldings = Object.entries(lots).reduce(
       (sum, [sym, qty]) => sum + qty * (priceMap.get(sym) ?? lastPrice[sym] ?? 0),
       0,
     );
-    points.push({ time: "Now", value: Number(liveValue.toFixed(2)) });
+    points.push({ time: "Now", value: Number((balance + liveHoldings).toFixed(2)) });
     return points;
-  }, [trades, priceMap]);
+  }, [trades, balance, priceMap]);
+
+  // Colour the NAV chart by overall direction: green when up, red when down.
+  const navIsUp =
+    navHistory.length > 1 &&
+    navHistory[navHistory.length - 1].value >= navHistory[0].value;
+  const navColor = navIsUp ? "hsl(var(--chart-up))" : "hsl(var(--chart-down))";
 
   // Keep the selected stock's price in sync with live quotes
   const liveSelected = selected
