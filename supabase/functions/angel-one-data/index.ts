@@ -370,11 +370,10 @@ async function reconcileBacktest(supabase: any, symbol: string, candles: any[]) 
       return { id: row.id, actual_price: actual, correct };
     })
     .filter((u): u is { id: string; actual_price: number; correct: boolean } => Boolean(u));
-  // Batch the updates so 10 pending rows aren't 10 sequential round-trips.
-  await Promise.all(
-    updates.map(({ id, actual_price, correct }) =>
-      supabase.from("prediction_log").update({ actual_price, correct }).eq("id", id)
-    ),
+  // Batch the updates in small concurrency-limited chunks so a large backlog of
+  // pending rows doesn't fire dozens of simultaneous Supabase update calls.
+  await fetchInBatches(updates, 5, ({ id, actual_price, correct }) =>
+    supabase.from("prediction_log").update({ actual_price, correct }).eq("id", id)
   );
 }
 
@@ -395,7 +394,7 @@ function getMarketStatus(timestampSeconds?: number): { status: "OPEN" | "CLOSED"
 }
 
 function formatVolume(value: number | null | undefined) {
-  if (!value || Number.isNaN(value)) return "N/A";
+  if (!value || !Number.isFinite(value) || value < 0) return "N/A";
   if (value >= 1e7) return `${(value / 1e7).toFixed(2)}Cr`;
   if (value >= 1e5) return `${(value / 1e5).toFixed(2)}L`;
   if (value >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
