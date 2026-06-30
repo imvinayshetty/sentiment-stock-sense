@@ -11,6 +11,7 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
   const { data: sentiment } = useNewsSentiment(symbol);
   const score = sentiment?.score ?? 50;
   const label = sentiment?.label ?? "Neutral";
+  const isDefaultSentiment = (sentiment?.scoredBy ?? "default") === "default";
 
   const projections = useMemo(() => {
     const fc = forecastData?.forecast ?? [];
@@ -47,13 +48,21 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
 
   const renderHorizon = (
     title: string,
-    p: { expected: number; low: number; high: number; changePct: number }
+    p: { expected: number; low: number; high: number; changePct: number },
+    note?: string
   ) => {
     const up = p.changePct >= 0;
     return (
       <div className="rounded-lg border border-border bg-secondary/40 p-4">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-muted-foreground">{title}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">{title}</span>
+            {note && (
+              <span className="rounded-full bg-chart-neutral/15 px-1.5 py-0.5 text-[9px] font-medium text-chart-neutral">
+                {note}
+              </span>
+            )}
+          </div>
           <span
             className={`flex items-center gap-1 font-mono text-xs ${
               up ? "text-chart-up" : "text-chart-down"
@@ -64,7 +73,7 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
             {p.changePct.toFixed(2)}%
           </span>
         </div>
-        <div className="mt-2 font-mono text-xl font-bold text-foreground">
+        <div className={`mt-2 font-mono text-xl font-bold ${note ? "text-muted-foreground" : "text-foreground"}`}>
           ₹{p.expected.toFixed(2)}
         </div>
         <div className="mt-2 text-xs text-muted-foreground">
@@ -87,6 +96,9 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
         <div className="text-right text-xs text-muted-foreground">
           <div>
             Sentiment: <span className="font-mono text-foreground">{score}</span> · {label}
+            {isDefaultSentiment && (
+              <span className="ml-1 text-chart-neutral">(default)</span>
+            )}
           </div>
           <div>
             Daily volatility:{" "}
@@ -96,7 +108,7 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {renderHorizon("Next 7 days", projections.d7)}
-        {renderHorizon("Next 30 days", projections.d30)}
+        {renderHorizon("Next 30 days", projections.d30, "lower confidence · extrapolated")}
       </div>
       <p className="mt-3 text-[10px] text-muted-foreground/70">
         Targets come from the same SES + linear-regression + RSI/MACD model used in the forecast chart.

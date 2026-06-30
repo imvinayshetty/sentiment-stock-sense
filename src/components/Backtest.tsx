@@ -8,6 +8,8 @@ interface BacktestProps {
 const Backtest = ({ symbol }: BacktestProps) => {
   const { data, isLoading } = useBacktest(symbol);
   const accuracy = data?.directionalAccuracy ?? null;
+  const MIN_SAMPLE = 10;
+  const reliable = (data?.evaluated ?? 0) >= MIN_SAMPLE;
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 card-glow">
@@ -27,7 +29,7 @@ const Backtest = ({ symbol }: BacktestProps) => {
         <>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
-              <div className={`font-mono text-2xl font-bold ${accuracy !== null && accuracy >= 55 ? "text-chart-up" : "text-chart-neutral"}`}>
+            <div className={`font-mono text-2xl font-bold ${reliable && accuracy !== null && accuracy >= 55 ? "text-chart-up" : "text-chart-neutral"}`}>
                 {accuracy !== null ? `${accuracy}%` : "—"}
               </div>
               <div className="text-xs text-muted-foreground">Directional accuracy</div>
@@ -37,7 +39,7 @@ const Backtest = ({ symbol }: BacktestProps) => {
               <div className="text-xs text-muted-foreground">Predictions scored</div>
             </div>
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
-              <div className={`font-mono text-2xl font-bold ${data.evaluated > 0 && data.correct / data.evaluated >= 0.55 ? "text-chart-up" : "text-chart-neutral"}`}>{data.correct}</div>
+              <div className={`font-mono text-2xl font-bold ${reliable && data.correct / data.evaluated >= 0.55 ? "text-chart-up" : "text-chart-neutral"}`}>{data.correct}</div>
               <div className="text-xs text-muted-foreground">Correct calls</div>
             </div>
           </div>
@@ -56,7 +58,7 @@ const Backtest = ({ symbol }: BacktestProps) => {
               <div className="text-xs text-muted-foreground">MAPE (avg % error)</div>
             </div>
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
-              <div className={`font-mono text-2xl font-bold ${data.withinBandPct !== null && data.withinBandPct >= 68 ? "text-chart-up" : "text-chart-neutral"}`}>
+              <div className={`font-mono text-2xl font-bold ${reliable && data.withinBandPct !== null && data.withinBandPct >= 68 ? "text-chart-up" : "text-chart-neutral"}`}>
                 {data.withinBandPct !== null ? `${data.withinBandPct}%` : "—"}
               </div>
               <div className="text-xs text-muted-foreground">Within ±1σ band</div>
@@ -66,6 +68,14 @@ const Backtest = ({ symbol }: BacktestProps) => {
               <div className="text-xs text-muted-foreground">Incorrect calls</div>
             </div>
           </div>
+
+          {!reliable && (
+            <p className="mt-3 rounded-md bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground">
+              Low sample size ({data.evaluated}/{MIN_SAMPLE}). Accuracy figures are shown in neutral
+              gray until at least {MIN_SAMPLE} predictions have matured — small samples aren't
+              statistically meaningful.
+            </p>
+          )}
 
           <div className="mt-4 space-y-2">
             {data.recent.map((r) => (
