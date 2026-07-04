@@ -46,6 +46,10 @@ const STOCK_TOKENS: Record<string, { name: string; yahooSymbol: string }> = {
   GRASIM: { name: "Grasim Industries", yahooSymbol: "GRASIM.NS" },
   EICHERMOT: { name: "Eicher Motors Ltd.", yahooSymbol: "EICHERMOT.NS" },
   HEROMOTOCO: { name: "Hero MotoCorp Ltd.", yahooSymbol: "HEROMOTOCO.NS" },
+  // NOTE: M_M is the ONLY symbol whose Yahoo ticker contains a special char ("&").
+  // Every Yahoo request goes through fetchChart(), which encodeURIComponent()s the
+  // symbol, so "M&M.NS" -> "M%26M.NS" is handled. Do not build Yahoo URLs elsewhere
+  // without encoding, and never compare yahooSymbol against the internal key ("M_M").
   M_M: { name: "Mahindra & Mahindra", yahooSymbol: "M&M.NS" },
   BRITANNIA: { name: "Britannia Industries", yahooSymbol: "BRITANNIA.NS" },
   INDUSINDBK: { name: "IndusInd Bank Ltd.", yahooSymbol: "INDUSINDBK.NS" },
@@ -282,9 +286,13 @@ function computeForecast(closes: number[]) {
   const window = closes.slice(-30);
   const n = window.length;
 
-  // Simple Exponential Smoothing
+  // Simple Exponential Smoothing.
+  // α=0.3 chosen for stability over the 30-day window (~5-day effective memory).
+  // Higher α (0.4–0.5) adapts faster and suits very volatile names, but is noisier;
+  // 0.3 is a deliberate stability-over-reactivity trade-off for the blended model.
+  const SES_ALPHA = 0.3;
   let s = window[0];
-  for (const c of window) s = 0.3 * c + 0.7 * s;
+  for (const c of window) s = SES_ALPHA * c + (1 - SES_ALPHA) * s;
 
   // Linear regression trend
   const { slope, intercept } = linearRegression(window);
@@ -351,7 +359,16 @@ function isoToCloseMap(candles: any[]): Record<string, number> {
   return map;
 }
 
+// In-memory throttle: reconcile at most once per symbol per hour. Reconcile is
+// idempotent, so skipping recent runs only avoids redundant SELECT/UPDATE load
+// when users browse many symbols in a session. Cleared on cold start (fine).
+const reconcileCache = new Map<string, number>();
+const RECONCILE_TTL_MS = 60 * 60 * 1000;
+
 async function reconcileBacktest(supabase: any, symbol: string, candles: any[]) {
+  const last = reconcileCache.get(symbol) ?? 0;
+  if (Date.now() - last < RECONCILE_TTL_MS) return;
+  reconcileCache.set(symbol, Date.now());
   const closeByDate = isoToCloseMap(candles);
   const isoDates = Object.keys(closeByDate).sort();
   const { data: pending } = await supabase
