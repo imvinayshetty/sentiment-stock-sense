@@ -88,15 +88,6 @@ export interface SentimentPayload {
   scoredBy: "groq" | "default";
 }
 
-async function callFunction(fn: string, params: Record<string, string> = {}) {
-  const queryParams = new URLSearchParams(params).toString();
-  const res = await fetch(`${PROJECT_URL}/functions/v1/${fn}?${queryParams}`, {
-    headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY },
-  });
-  if (!res.ok) throw new Error(`Edge function error: ${await res.text()}`);
-  return res.json();
-}
-
 export function useNewsSentiment(symbol: string) {
   return useQuery<SentimentPayload>({
     queryKey: ["news-sentiment", symbol],
@@ -175,6 +166,7 @@ export interface BacktestPayload {
   mae: number | null;
   mape: number | null;
   withinBandPct: number | null;
+  pending: number;
   recent: BacktestRow[];
 }
 
@@ -191,6 +183,7 @@ export function useBacktest(symbol?: string) {
         mae: result.mae ?? null,
         mape: result.mape ?? null,
         withinBandPct: result.withinBandPct ?? null,
+        pending: result.pending ?? 0,
         recent: result.recent ?? [],
       };
     },
