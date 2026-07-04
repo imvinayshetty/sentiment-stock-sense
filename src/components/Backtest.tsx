@@ -21,10 +21,17 @@ const Backtest = ({ symbol }: BacktestProps) => {
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading backtest results…</p>
       ) : !data || data.evaluated === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No matured predictions yet. Each 7-day forecast is logged and scored once its horizon date passes —
-          check back after a week of forecasts.
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            No matured predictions yet. Each 7-day forecast is logged and scored once its horizon date passes —
+            check back after a week of forecasts.
+          </p>
+          {(data?.pending ?? 0) > 0 && (
+            <p className="text-xs text-chart-neutral">
+              {data!.pending} prediction{data!.pending === 1 ? "" : "s"} awaiting maturity.
+            </p>
+          )}
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-3 gap-3">
@@ -74,6 +81,12 @@ const Backtest = ({ symbol }: BacktestProps) => {
               Low sample size ({data.evaluated}/{MIN_SAMPLE}). Accuracy figures are shown in neutral
               gray until at least {MIN_SAMPLE} predictions have matured — small samples aren't
               statistically meaningful.
+            </p>
+          )}
+
+          {data.pending > 0 && (
+            <p className="mt-3 text-xs text-chart-neutral">
+              {data.pending} prediction{data.pending === 1 ? "" : "s"} awaiting maturity (not yet scored).
             </p>
           )}
 
