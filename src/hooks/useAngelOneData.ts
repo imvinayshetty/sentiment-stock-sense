@@ -12,21 +12,17 @@ export interface QuotesPayload {
 const PROJECT_URL = import.meta.env.VITE_SUPABASE_URL;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-async function callEdgeFunction(action: string, params: Record<string, string> = {}) {
-  const queryParams = new URLSearchParams({ action, ...params }).toString();
-
-  const res = await fetch(`${PROJECT_URL}/functions/v1/angel-one-data?${queryParams}`, {
+// Single fetch wrapper for every edge function call. Pass the function name and
+// query params; callers that hit angel-one-data include their own `action` param.
+async function callFunction(fn: string, params: Record<string, string> = {}) {
+  const queryParams = new URLSearchParams(params).toString();
+  const res = await fetch(`${PROJECT_URL}/functions/v1/${fn}?${queryParams}`, {
     headers: {
-      "Authorization": `Bearer ${ANON_KEY}`,
-      "apikey": ANON_KEY,
+      Authorization: `Bearer ${ANON_KEY}`,
+      apikey: ANON_KEY,
     },
   });
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`Edge function error: ${errBody}`);
-  }
-
+  if (!res.ok) throw new Error(`Edge function error: ${await res.text()}`);
   return res.json();
 }
 
@@ -34,7 +30,7 @@ export function useStockQuotes() {
   return useQuery<QuotesPayload>({
     queryKey: ["stock-quotes"],
     queryFn: async () => {
-      const result = await callEdgeFunction("quotes");
+      const result = await callFunction("angel-one-data", { action: "quotes" });
       if (!result.success) throw new Error(result.error);
       return {
         data: result.data ?? [],
@@ -53,7 +49,7 @@ export function useHistoricalData(symbol: string) {
   return useQuery<PredictionData[]>({
     queryKey: ["historical", symbol],
     queryFn: async () => {
-      const result = await callEdgeFunction("historical", { symbol });
+      const result = await callFunction("angel-one-data", { action: "historical", symbol });
       if (!result.success) throw new Error(result.error);
 
       // Transform candle data [timestamp, open, high, low, close, volume].
