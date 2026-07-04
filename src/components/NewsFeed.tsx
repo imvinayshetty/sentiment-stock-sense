@@ -24,7 +24,7 @@ const NewsFeed = ({ symbol }: NewsFeedProps) => {
         <p className="text-sm text-muted-foreground">No recent news found for this stock.</p>
       )}
       <div className="space-y-3">
-        {news.map((item) => {
+        {news.map((item, i) => {
           const hasLink = Boolean(item.link);
           const Wrapper = hasLink ? "a" : "div";
           const wrapperProps = hasLink
@@ -32,7 +32,7 @@ const NewsFeed = ({ symbol }: NewsFeedProps) => {
             : {};
           return (
             <Wrapper
-              key={item.link || `${item.title}-${item.source}`}
+              key={item.link || `${item.source}-${item.title}-${i}`}
               {...wrapperProps}
               className={`flex gap-3 rounded-lg border border-border bg-secondary/30 p-3 ${
                 hasLink ? "transition-colors hover:bg-secondary/60" : ""

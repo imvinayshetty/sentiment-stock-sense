@@ -59,7 +59,11 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
       if (best && best.symbol !== selectedSymbol) onSelect(best.symbol);
     }, 300);
     return () => clearTimeout(handle);
-  }, [q, stocks, selectedSymbol, onSelect]);
+    // `selectedSymbol` is intentionally omitted: it's read inside the debounced
+    // callback only as a stale-closure guard. Including it would re-run the effect
+    // on every auto-select (onSelect → selectedSymbol change), doubling evaluations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, stocks, onSelect]);
 
   // When the query is cleared (deleted or Escape), restore the user's last
   // explicit selection rather than leaving an auto-selected stock active.

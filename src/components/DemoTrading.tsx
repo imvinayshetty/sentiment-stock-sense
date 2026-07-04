@@ -55,7 +55,19 @@ function getSessionId(): string {
     }
     return id;
   } catch {
-    return crypto.randomUUID();
+    // localStorage blocked (e.g. strict private mode) — fall back to sessionStorage
+    // so the id at least stays stable within the tab session instead of changing
+    // on every call/remount and orphaning backend rows.
+    try {
+      let id = sessionStorage.getItem(SESSION_KEY);
+      if (!id) {
+        id = crypto.randomUUID();
+        sessionStorage.setItem(SESSION_KEY, id);
+      }
+      return id;
+    } catch {
+      return crypto.randomUUID(); // truly ephemeral — accepted tradeoff
+    }
   }
 }
 
