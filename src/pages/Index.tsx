@@ -11,13 +11,15 @@ import PriceTarget from "@/components/PriceTarget";
 import NewsFeed from "@/components/NewsFeed";
 import Backtest from "@/components/Backtest";
 import DemoTrading from "@/components/DemoTrading";
-import { useStockQuotes, useForecast } from "@/hooks/useAngelOneData";
+import { useStockQuotes, useForecast, useNewsSentiment, useBacktest } from "@/hooks/useAngelOneData";
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
   const { data: quotes, isFetching: quotesFetching, refetch } = useStockQuotes();
   const { isFetching: forecastFetching } = useForecast(selectedSymbol);
-  const isRefreshing = quotesFetching || forecastFetching;
+  const { isFetching: sentimentFetching } = useNewsSentiment(selectedSymbol);
+  const { isFetching: backtestFetching } = useBacktest(selectedSymbol);
+  const isRefreshing = quotesFetching || forecastFetching || sentimentFetching || backtestFetching;
   const queryClient = useQueryClient();
   const marketOpen = quotes?.marketStatus === "OPEN";
   const istTime = quotes?.istTime;
