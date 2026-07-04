@@ -277,7 +277,7 @@ const NSE_HOLIDAYS = new Set<string>([
   "2025-10-21", "2025-10-22", "2025-11-05", "2025-12-25",
   // 2026
   "2026-01-26", "2026-02-15", "2026-03-04", "2026-03-21", "2026-04-01",
-  "2026-04-03", "2026-04-14", "2026-05-01", "2026-08-15", "2026-10-02",
+  "2026-04-03", "2026-04-14", "2026-05-01", "2026-07-06", "2026-08-15", "2026-10-02",
   "2026-10-20", "2026-11-09", "2026-12-25",
 ]);
 
@@ -663,6 +663,12 @@ serve(async (req) => {
       const mape = errCount ? Number((pctErrSum / errCount).toFixed(2)) : null;
       const withinBandPct = bandCount ? Math.round((withinBand / bandCount) * 100) : null;
 
+      // Count predictions logged but not yet matured/scored (actual_price IS NULL)
+      // so the UI can show "N awaiting maturity" instead of hiding them entirely.
+      let pendingQuery = supabase.from("prediction_log").select("*", { count: "exact", head: true }).is("actual_price", null);
+      if (symbol) pendingQuery = pendingQuery.eq("symbol", symbol);
+      const { count: pending } = await pendingQuery;
+
       return new Response(JSON.stringify({
         success: true,
         evaluated: evaluated.length,
@@ -671,6 +677,7 @@ serve(async (req) => {
         mae,
         mape,
         withinBandPct,
+        pending: pending ?? 0,
         recent: evaluated.slice(-10).reverse(),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

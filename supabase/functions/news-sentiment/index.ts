@@ -8,6 +8,9 @@ const corsHeaders = {
 };
 
 const CACHE_TTL_MINUTES = 60;
+// Zero-article results are cached only briefly so a transient RSS/network blip
+// doesn't lock users out of news + sentiment for the full hour.
+const ZERO_ARTICLE_TTL_MINUTES = 5;
 
 // Company names used to build a focused Google News query per symbol.
 const COMPANY_NAMES: Record<string, string> = {
@@ -169,7 +172,9 @@ serve(async (req) => {
       .from("sentiment_cache").select("*").eq("symbol", symbol).maybeSingle();
     if (cached) {
       const ageMin = (Date.now() - new Date(cached.updated_at).getTime()) / 60000;
-      if (ageMin < CACHE_TTL_MINUTES) {
+      const isEmpty = !Array.isArray(cached.articles) || cached.articles.length === 0;
+      const ttl = isEmpty ? ZERO_ARTICLE_TTL_MINUTES : CACHE_TTL_MINUTES;
+      if (ageMin < ttl) {
         return new Response(JSON.stringify({ success: true, cached: true, ...cached }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
