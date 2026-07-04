@@ -9,6 +9,21 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
   const { data: historicalData, isLoading } = useHistoricalData(symbol);
   const { data: forecastData } = useForecast(symbol);
 
+  if (isLoading && !historicalData?.length) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-5 card-glow">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-5 w-52 animate-pulse rounded bg-muted" />
+            <div className="h-4 w-40 animate-pulse rounded bg-muted/70" />
+          </div>
+          <div className="h-6 w-20 animate-pulse rounded-md bg-muted" />
+        </div>
+        <div className="h-[350px] w-full animate-pulse rounded-lg bg-muted/40" />
+      </div>
+    );
+  }
+
   if (!isLoading && !historicalData?.length) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 card-glow">
