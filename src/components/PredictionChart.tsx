@@ -6,8 +6,8 @@ interface PredictionChartProps {
 }
 
 const PredictionChart = ({ symbol }: PredictionChartProps) => {
-  const { data, isLoading } = useHistoricalData(symbol);
-  const historicalData = data ?? [];
+  const { data: histData, isLoading } = useHistoricalData(symbol);
+  const historicalData = histData ?? [];
   const { data: forecastData } = useForecast(symbol);
 
   if (isLoading && historicalData.length === 0) {
