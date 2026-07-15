@@ -34,7 +34,7 @@ const Backtest = ({ symbol }: BacktestProps) => {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
             <div className={`font-mono text-2xl font-bold ${reliable && accuracy !== null && accuracy >= 55 ? "text-chart-up" : "text-chart-neutral"}`}>
                 {accuracy !== null ? `${accuracy}%` : "—"}
@@ -42,11 +42,11 @@ const Backtest = ({ symbol }: BacktestProps) => {
               <div className="text-xs text-muted-foreground">Directional accuracy</div>
             </div>
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
-              <div className="font-mono text-2xl font-bold text-foreground">{data.evaluated}</div>
+              <div className="font-mono text-xl font-bold text-foreground sm:text-2xl">{data.evaluated}</div>
               <div className="text-xs text-muted-foreground">Predictions scored</div>
             </div>
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
-              <div className={`font-mono text-2xl font-bold ${reliable && data.correct / data.evaluated >= 0.55 ? "text-chart-up" : "text-chart-neutral"}`}>{data.correct}</div>
+              <div className={`font-mono text-xl font-bold sm:text-2xl ${reliable && data.correct / data.evaluated >= 0.55 ? "text-chart-up" : "text-chart-neutral"}`}>{data.correct}</div>
               <div className="text-xs text-muted-foreground">Correct calls</div>
             </div>
           </div>
