@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, TrendingUp, TrendingDown } from "lucide-react";
 import { useStockQuotes } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
+import { useUserSettings } from "@/hooks/useUserSettings";
+import HoldingsSellPanel from "./HoldingsSellPanel";
 
 interface StockSearchProps {
   onSelect: (symbol: string) => void;
@@ -21,6 +23,9 @@ function scoreStock(s: StockQuote): number {
 
 const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const [query, setQuery] = useState("");
+  const { settings } = useUserSettings();
+  const budgetMax = settings.budgetMax;
+  const holdings = settings.holdings;
   // Remember the last symbol the user explicitly clicked, so that when an
   // auto-selected (typed) query is cleared we can restore their real choice.
   const lastExplicitRef = useRef(selectedSymbol);
@@ -82,7 +87,8 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   }, [selectedSymbol, q]);
 
   const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
-  const topBuy = ranked.slice(0, 10);
+  const affordable = budgetMax != null ? ranked.filter((s) => s.price <= budgetMax) : ranked;
+  const topBuy = affordable.slice(0, 10);
   const topSell = ranked.slice(-10).reverse();
   const showNoVerifiedData = !isLoading && stocks.length === 0;
 
@@ -145,28 +151,49 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
             <header className="mb-2 flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-chart-up" />
               <h2 className="text-sm font-semibold text-foreground">Top 10 to Buy</h2>
-              <span className="ml-auto text-xs text-muted-foreground">Strong momentum today</span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {budgetMax != null ? `Under ₹${budgetMax.toLocaleString("en-IN")}` : "Strong momentum today"}
+              </span>
             </header>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
               {topBuy.map(renderCard)}
               {showNoVerifiedData && (
                 <p className="col-span-full text-sm text-muted-foreground">Waiting for verified buy-side market movers.</p>
               )}
-            </div>
-          </section>
-          <section className="rounded-lg border border-chart-down/30 bg-chart-down/5 p-3">
-            <header className="mb-2 flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-chart-down" />
-              <h2 className="text-sm font-semibold text-foreground">Top 10 to Sell</h2>
-              <span className="ml-auto text-xs text-muted-foreground">Weak / declining today</span>
-            </header>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
-              {topSell.map(renderCard)}
-              {showNoVerifiedData && (
-                <p className="col-span-full text-sm text-muted-foreground">Waiting for verified sell-side market movers.</p>
+              {!showNoVerifiedData && topBuy.length === 0 && budgetMax != null && (
+                <p className="col-span-full text-sm text-muted-foreground">
+                  No stocks currently priced at or below ₹{budgetMax.toLocaleString("en-IN")}. Raise your budget in Portfolio settings.
+                </p>
               )}
             </div>
           </section>
+          {holdings.length > 0 ? (
+            <HoldingsSellPanel
+              holdings={holdings}
+              onSelect={(sym) => {
+                lastExplicitRef.current = sym;
+                onSelect(sym);
+              }}
+              selectedSymbol={selectedSymbol}
+            />
+          ) : (
+            <section className="rounded-lg border border-chart-down/30 bg-chart-down/5 p-3">
+              <header className="mb-2 flex items-center gap-2">
+                <TrendingDown className="h-4 w-4 text-chart-down" />
+                <h2 className="text-sm font-semibold text-foreground">Top 10 to Sell</h2>
+                <span className="ml-auto text-xs text-muted-foreground">Weak / declining today</span>
+              </header>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
+                {topSell.map(renderCard)}
+                {showNoVerifiedData && (
+                  <p className="col-span-full text-sm text-muted-foreground">Waiting for verified sell-side market movers.</p>
+                )}
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground/80">
+                Add your holdings in Portfolio settings to get personalised sell suggestions with target prices.
+              </p>
+            </section>
+          )}
         </div>
       )}
     </div>
