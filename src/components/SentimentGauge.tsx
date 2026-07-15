@@ -9,7 +9,7 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
   const { data, isLoading, isError } = useNewsSentiment(symbol);
   const score = data?.score ?? 50;
   const label = data?.label ?? "Neutral";
-  const tweets = data?.buzz ?? 0;
+  const buzz = data?.buzz ?? 0;
   const isDefault = data?.scoredBy !== "groq";
 
   if (isLoading) {
@@ -45,7 +45,7 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
   // Confidence: combines distance from neutral (50) with sample-size weight (log scale)
   const extremity = Math.min(1, Math.abs(score - 50) / 40); // 0..1
   // Calibrated to ~50 articles/week as "high coverage" (news volume, not tweet volume).
-  const volumeWeight = Math.min(1, Math.log10(Math.max(tweets, 1) + 1) / Math.log10(51));
+  const volumeWeight = Math.min(1, Math.log10(Math.max(buzz, 1) + 1) / Math.log10(51));
   const confidence = Math.round((extremity * 0.6 + volumeWeight * 0.4) * 100);
   const confidenceLabel = confidence >= 75 ? "High" : confidence >= 50 ? "Moderate" : confidence >= 30 ? "Low" : "Very Low";
   const confidenceColor =
@@ -87,7 +87,7 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
             {label}
           </div>
           <p className="text-sm text-muted-foreground">
-            Based on <span className="font-mono text-foreground">{tweets.toLocaleString()}</span> recent news articles
+            Based on <span className="font-mono text-foreground">{buzz.toLocaleString()}</span> recent news articles
           </p>
           <p className="text-xs text-muted-foreground">
             {isDefault ? "AI sentiment scoring unavailable — showing neutral default" : "Powered by Google News + AI sentiment scoring"}
@@ -97,7 +97,7 @@ const SentimentGauge = ({ symbol }: SentimentGaugeProps) => {
       {isDefault && (
         <div className="mt-4 rounded-lg border border-chart-neutral/30 bg-chart-neutral/10 p-3 text-xs text-muted-foreground">
           Sentiment scoring is unavailable right now, so this score is a neutral default rather than an
-          analysis of the {tweets} headline{tweets === 1 ? "" : "s"} above. No buy/sell signal is shown.
+          analysis of the {buzz} headline{buzz === 1 ? "" : "s"} above. No buy/sell signal is shown.
         </div>
       )}
       {!isDefault && confidence < 30 && (
