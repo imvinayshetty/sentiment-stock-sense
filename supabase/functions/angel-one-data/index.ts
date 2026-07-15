@@ -82,6 +82,20 @@ function getSupabase() {
   );
 }
 
+// Symbol validation for free-form NSE symbol entry. Accepts uppercase letters,
+// digits, and a few punctuation chars used in NSE tickers (e.g. M&M, L&T).
+const SYMBOL_REGEX = /^[A-Z0-9&_\-]{1,20}$/;
+function isValidSymbol(sym: string): boolean {
+  return SYMBOL_REGEX.test(sym);
+}
+// Resolve a symbol (curated or free-form) to fetch metadata. Free-form symbols
+// fall back to `${symbol}.NS` and use the symbol itself as the display name.
+function resolveSymbolInfo(symbol: string): { name: string; yahooSymbol: string } {
+  const known = STOCK_TOKENS[symbol];
+  if (known) return known;
+  return { name: symbol, yahooSymbol: `${symbol}.NS` };
+}
+
 // ---------- Angel One SmartAPI (live quotes) ----------
 function base32Decode(input: string): Uint8Array {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
