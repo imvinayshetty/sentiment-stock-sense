@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
 import TickerBar from "@/components/TickerBar";
 import StockSearch from "@/components/StockSearch";
+import SettingsDialog from "@/components/SettingsDialog";
 import StockDetail from "@/components/StockDetail";
 import PredictionChart from "@/components/PredictionChart";
 import SentimentGauge from "@/components/SentimentGauge";
@@ -48,6 +49,7 @@ const Index = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <SettingsDialog />
             <Button
               size="sm"
               variant="outline"
