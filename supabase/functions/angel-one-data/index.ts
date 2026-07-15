@@ -625,7 +625,6 @@ serve(async (req) => {
           direction: day7.forecast >= result.lastPrice ? "up" : "down",
           lower_bound: day7.lower,
           upper_bound: day7.upper,
-          sigma: result.sigma,
         }, { onConflict: "symbol,predicted_at,horizon_date", ignoreDuplicates: true });
         await reconcileBacktest(supabase, symbol, candles);
       } catch (e) {
