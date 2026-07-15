@@ -92,30 +92,20 @@ async function tryFetch(url: string): Promise<string | null> {
 
 // Tries Google News RSS, then Yahoo Finance RSS, then Bing News RSS.
 async function fetchNews(query: string, symbol: string): Promise<RawArticle[]> {
-  const google = await tryFetch(
-    `https://news.google.com/rss/search?q=${encodeURIComponent(query + " stock NSE")}&hl=en-IN&gl=IN&ceid=IN:en`,
-  );
-  if (google) {
-    const parsed = parseRss(google, "Google News");
-    if (parsed.length) return parsed;
+  // Run all three RSS sources in parallel. Worst case is bounded by tryFetch's
+  // own retry/timeout (~20.8s) rather than the sum of all three (~62s).
+  const sources = [
+    tryFetch(`https://news.google.com/rss/search?q=${encodeURIComponent(query + " stock NSE")}&hl=en-IN&gl=IN&ceid=IN:en`)
+      .then((xml) => (xml ? parseRss(xml, "Google News") : [])),
+    tryFetch(`https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(symbol + ".NS")}&region=IN&lang=en-IN`)
+      .then((xml) => (xml ? parseRss(xml, "Yahoo Finance") : [])),
+    tryFetch(`https://www.bing.com/news/search?q=${encodeURIComponent(query + " stock NSE")}&format=RSS`)
+      .then((xml) => (xml ? parseRss(xml, "Bing News") : [])),
+  ];
+  const results = await Promise.allSettled(sources);
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value.length > 0) return r.value;
   }
-
-  const yahoo = await tryFetch(
-    `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(symbol + ".NS")}&region=IN&lang=en-IN`,
-  );
-  if (yahoo) {
-    const parsed = parseRss(yahoo, "Yahoo Finance");
-    if (parsed.length) return parsed;
-  }
-
-  const bing = await tryFetch(
-    `https://www.bing.com/news/search?q=${encodeURIComponent(query + " stock NSE")}&format=RSS`,
-  );
-  if (bing) {
-    const parsed = parseRss(bing, "Bing News");
-    if (parsed.length) return parsed;
-  }
-
   return [];
 }
 
