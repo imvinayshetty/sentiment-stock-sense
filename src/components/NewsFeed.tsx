@@ -8,6 +8,7 @@ interface NewsFeedProps {
 const NewsFeed = ({ symbol }: NewsFeedProps) => {
   const { data, isLoading, isError } = useNewsSentiment(symbol);
   const news = data?.articles ?? [];
+  const isDefaultScoring = data?.scoredBy !== "groq";
 
   const sentimentIcon = (s: string) => {
     if (s === "positive") return <TrendingUp className="h-4 w-4 text-chart-up" />;
@@ -22,6 +23,11 @@ const NewsFeed = ({ symbol }: NewsFeedProps) => {
       {isError && <p className="text-sm text-muted-foreground">News is unavailable right now.</p>}
       {!isLoading && !isError && news.length === 0 && (
         <p className="text-sm text-muted-foreground">No recent news found for this stock.</p>
+      )}
+      {!isLoading && !isError && isDefaultScoring && news.length > 0 && (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Sentiment icons are unavailable — AI scoring is offline.
+        </p>
       )}
       <div className="space-y-3">
         {news.map((item, i) => {
@@ -38,7 +44,7 @@ const NewsFeed = ({ symbol }: NewsFeedProps) => {
                 hasLink ? "transition-colors hover:bg-secondary/60" : ""
               }`}
             >
-              <div className="mt-0.5">{sentimentIcon(item.sentiment)}</div>
+              {!isDefaultScoring && <div className="mt-0.5">{sentimentIcon(item.sentiment)}</div>}
               <div className="min-w-0 flex-1">
                 <h4 className="text-sm font-medium text-foreground">{item.title}</h4>
                 <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">

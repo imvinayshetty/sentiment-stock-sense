@@ -71,7 +71,7 @@ const Backtest = ({ symbol }: BacktestProps) => {
               <div className="text-xs text-muted-foreground">Within ±1σ band</div>
             </div>
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
-              <div className="font-mono text-2xl font-bold text-chart-down">{data.evaluated - data.correct}</div>
+              <div className={`font-mono text-2xl font-bold ${data.evaluated - data.correct === 0 ? "text-chart-up" : "text-chart-down"}`}>{data.evaluated - data.correct}</div>
               <div className="text-xs text-muted-foreground">Incorrect calls</div>
             </div>
           </div>
