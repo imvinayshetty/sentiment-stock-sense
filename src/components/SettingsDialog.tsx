@@ -111,14 +111,14 @@ const SettingsDialog = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="grid grid-cols-[1fr_5rem_6rem_2rem] gap-2 px-1 text-xs font-medium text-muted-foreground">
+                <div className="grid grid-cols-[1fr_4rem_5rem_2rem] gap-2 px-1 text-xs font-medium text-muted-foreground sm:grid-cols-[1fr_5rem_6rem_2rem]">
                   <span>Symbol</span>
                   <span>Qty</span>
                   <span>Buy price</span>
                   <span />
                 </div>
                 {rows.map((row, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_5rem_6rem_2rem] gap-2">
+                  <div key={i} className="grid grid-cols-[1fr_4rem_5rem_2rem] gap-2 sm:grid-cols-[1fr_5rem_6rem_2rem]">
                     <select
                       value={row.symbol}
                       onChange={(e) => updateRow(i, { symbol: e.target.value })}
