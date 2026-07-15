@@ -94,7 +94,9 @@ export function getStockDirectory(): StockDirectoryEntry[] {
   return STOCK_DIRECTORY;
 }
 
-export function getStockMeta(symbol: string): StockDirectoryEntry | undefined {
+export function getStockMeta(symbol: string): StockDirectoryEntry {
   const sym = symbol.toUpperCase();
-  return STOCK_DIRECTORY.find((stock) => stock.symbol === sym);
+  return (
+    STOCK_DIRECTORY.find((stock) => stock.symbol === sym) ?? { symbol: sym, name: sym }
+  );
 }

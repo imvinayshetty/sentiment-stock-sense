@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, TrendingUp, TrendingDown } from "lucide-react";
-import { useStockQuotes } from "@/hooks/useAngelOneData";
+import { Search, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
+import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import HoldingsSellPanel from "./HoldingsSellPanel";
@@ -23,6 +23,10 @@ function scoreStock(s: StockQuote): number {
 
 const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const [query, setQuery] = useState("");
+  const [resolveState, setResolveState] = useState<{ loading: boolean; error: string | null }>({
+    loading: false,
+    error: null,
+  });
   const { settings } = useUserSettings();
   const budgetMax = settings.budgetMax;
   const holdings = settings.holdings;
@@ -47,6 +51,27 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
           s.name.toLowerCase().includes(q),
       )
     : [];
+  const symbolCandidate = query.trim().toUpperCase();
+  const canTryFreeForm =
+    !!q && filtered.length === 0 && /^[A-Z0-9&_\-]{1,20}$/.test(symbolCandidate);
+
+  const handleResolveFreeForm = async () => {
+    setResolveState({ loading: true, error: null });
+    try {
+      const resolved = await resolveSymbol(symbolCandidate);
+      lastExplicitRef.current = resolved.symbol;
+      onSelect(resolved.symbol);
+      setQuery("");
+      setResolveState({ loading: false, error: null });
+    } catch (e) {
+      setResolveState({ loading: false, error: (e as Error).message });
+    }
+  };
+
+  // Reset resolve error when the query changes.
+  useEffect(() => {
+    setResolveState((s) => (s.error ? { loading: s.loading, error: null } : s));
+  }, [q]);
 
   // Auto-select the best match as the user types so StockDetail updates live.
   // Debounced (300ms) and keyed on the query only, so mid-keystroke filtering
@@ -136,13 +161,40 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
       </div>
 
       {q ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-          {showNoVerifiedData && (
-            <p className="col-span-full text-sm text-muted-foreground">Verified market data is unavailable right now.</p>
-          )}
-          {filtered.map(renderCard)}
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+            {showNoVerifiedData && (
+              <p className="col-span-full text-sm text-muted-foreground">Verified market data is unavailable right now.</p>
+            )}
+            {filtered.map(renderCard)}
+          </div>
           {filtered.length === 0 && (
-            <p className="col-span-full text-sm text-muted-foreground">No stocks match "{query}".</p>
+            <div className="rounded-lg border border-dashed border-border bg-secondary/30 p-3">
+              {canTryFreeForm ? (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-foreground">
+                      No curated match. Try{" "}
+                      <span className="font-mono font-semibold">{symbolCandidate}</span>{" "}
+                      as a live NSE symbol?
+                    </p>
+                    {resolveState.error && (
+                      <p className="mt-1 text-xs text-chart-down">{resolveState.error}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleResolveFreeForm}
+                    disabled={resolveState.loading}
+                    className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {resolveState.loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Search live NSE
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No stocks match "{query}".</p>
+              )}
+            </div>
           )}
         </div>
       ) : (

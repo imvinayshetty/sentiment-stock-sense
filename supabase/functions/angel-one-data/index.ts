@@ -82,6 +82,20 @@ function getSupabase() {
   );
 }
 
+// Symbol validation for free-form NSE symbol entry. Accepts uppercase letters,
+// digits, and a few punctuation chars used in NSE tickers (e.g. M&M, L&T).
+const SYMBOL_REGEX = /^[A-Z0-9&_\-]{1,20}$/;
+function isValidSymbol(sym: string): boolean {
+  return SYMBOL_REGEX.test(sym);
+}
+// Resolve a symbol (curated or free-form) to fetch metadata. Free-form symbols
+// fall back to `${symbol}.NS` and use the symbol itself as the display name.
+function resolveSymbolInfo(symbol: string): { name: string; yahooSymbol: string } {
+  const known = STOCK_TOKENS[symbol];
+  if (known) return known;
+  return { name: symbol, yahooSymbol: `${symbol}.NS` };
+}
+
 // ---------- Angel One SmartAPI (live quotes) ----------
 function base32Decode(input: string): Uint8Array {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -591,13 +605,13 @@ serve(async (req) => {
     }
 
     if (action === "historical" && symbol) {
-      const stockInfo = STOCK_TOKENS[symbol];
-      if (!stockInfo) {
-        return new Response(JSON.stringify({ success: false, error: "Unknown symbol" }), {
+      if (!isValidSymbol(symbol)) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid symbol format" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      const stockInfo = resolveSymbolInfo(symbol);
 
       const chart = await fetchChart(stockInfo.yahooSymbol, "1mo", "1d");
       return new Response(JSON.stringify({ success: true, data: mapHistorical(chart) }), {
@@ -606,12 +620,12 @@ serve(async (req) => {
     }
 
     if (action === "forecast" && symbol) {
-      const stockInfo = STOCK_TOKENS[symbol];
-      if (!stockInfo) {
-        return new Response(JSON.stringify({ success: false, error: "Unknown symbol" }), {
+      if (!isValidSymbol(symbol)) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid symbol format" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      const stockInfo = resolveSymbolInfo(symbol);
       // 3mo (~63 trading days) is enough to warm up RSI(14)/MACD(26) with buffer
       // while computeForecast only uses the last 30 closes for SES/LR.
       const chart = await fetchChart(stockInfo.yahooSymbol, "3mo", "1d");
@@ -710,6 +724,32 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: true, data: symbols }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    if (action === "resolve" && symbol) {
+      if (!isValidSymbol(symbol)) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid symbol format" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const info = resolveSymbolInfo(symbol);
+      try {
+        const chart = await fetchChart(info.yahooSymbol, "5d", "1d");
+        const quote = mapQuote(symbol, info, chart);
+        if (!quote || !(quote.price > 0)) throw new Error("empty");
+        return new Response(JSON.stringify({
+          success: true,
+          symbol,
+          name: info.name,
+          price: quote.price,
+          exchange: "NSE",
+          curated: Boolean(STOCK_TOKENS[symbol]),
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch {
+        return new Response(JSON.stringify({ success: false, error: "Symbol not found on NSE" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     return new Response(JSON.stringify({ success: false, error: "Invalid action" }), {
