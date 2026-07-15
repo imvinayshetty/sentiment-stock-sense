@@ -7,7 +7,7 @@ interface PriceTargetProps {
 }
 
 const PriceTarget = ({ symbol }: PriceTargetProps) => {
-  const { data: forecastData } = useForecast(symbol);
+  const { data: forecastData, isLoading } = useForecast(symbol);
   const { data: sentiment } = useNewsSentiment(symbol);
   const score = sentiment?.score ?? 50;
   const label = sentiment?.label ?? "Neutral";
@@ -44,7 +44,17 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
     return { sigma, d7, d30 };
   }, [forecastData]);
 
-  if (!projections) return null;
+  if (isLoading || !projections) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-5 card-glow">
+        <div className="mb-4 h-5 w-48 animate-pulse rounded bg-muted" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="h-24 animate-pulse rounded-lg bg-muted/40" />
+          <div className="h-24 animate-pulse rounded-lg bg-muted/40" />
+        </div>
+      </div>
+    );
+  }
 
   const renderHorizon = (
     title: string,
