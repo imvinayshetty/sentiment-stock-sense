@@ -9,7 +9,7 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
   const { data: historicalData, isLoading } = useHistoricalData(symbol);
   const { data: forecastData } = useForecast(symbol);
 
-  if (isLoading && !historicalData?.length) {
+  if (isLoading && (historicalData?.length ?? 0) === 0) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 card-glow">
         <div className="mb-4 flex items-center justify-between">
