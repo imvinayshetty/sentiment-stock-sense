@@ -38,6 +38,28 @@ async function callFunction(fn: string, params: Record<string, string> = {}) {
   }
 }
 
+// ---------- Free-form symbol resolution ----------
+export interface ResolvedSymbol {
+  symbol: string;
+  name: string;
+  price: number;
+  exchange: string;
+  curated: boolean;
+}
+export async function resolveSymbol(symbol: string): Promise<ResolvedSymbol> {
+  const clean = symbol.trim().toUpperCase();
+  if (!/^[A-Z0-9&_\-]{1,20}$/.test(clean)) throw new Error("Invalid symbol format");
+  const result = await callFunction("angel-one-data", { action: "resolve", symbol: clean });
+  if (!result.success) throw new Error(result.error ?? "Symbol not found");
+  return {
+    symbol: result.symbol,
+    name: result.name ?? result.symbol,
+    price: Number(result.price ?? 0),
+    exchange: result.exchange ?? "NSE",
+    curated: Boolean(result.curated),
+  };
+}
+
 export function useStockQuotes() {
   return useQuery<QuotesPayload>({
     queryKey: ["stock-quotes"],
