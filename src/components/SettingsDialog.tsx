@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Settings as SettingsIcon } from "lucide-react";
+import { Plus, Trash2, Settings as SettingsIcon, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,34 +13,101 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUserSettings, type Holding } from "@/hooks/useUserSettings";
-import { getStockDirectory } from "@/lib/stockData";
+import { resolveSymbol } from "@/hooks/useAngelOneData";
 
-const DIRECTORY = getStockDirectory();
+const SYMBOL_REGEX = /^[A-Z0-9&_\-]{1,20}$/;
 
 const SettingsDialog = () => {
   const { settings, save } = useUserSettings();
   const [open, setOpen] = useState(false);
   const [budgetInput, setBudgetInput] = useState<string>("");
   const [rows, setRows] = useState<Holding[]>([]);
+  // Per-row validation state for free-form symbols.
+  const [rowStatus, setRowStatus] = useState<Record<number, { loading: boolean; error: string | null; verified: boolean }>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setBudgetInput(settings.budgetMax != null ? String(settings.budgetMax) : "");
     setRows(settings.holdings.length ? settings.holdings : []);
+    // Existing holdings were previously verified when added; mark as verified
+    // so Save doesn't re-validate them on every open.
+    const initial: Record<number, { loading: boolean; error: string | null; verified: boolean }> = {};
+    settings.holdings.forEach((_, i) => {
+      initial[i] = { loading: false, error: null, verified: true };
+    });
+    setRowStatus(initial);
+    setSaveError(null);
   }, [open, settings]);
 
   const addRow = () =>
-    setRows((r) => [...r, { symbol: DIRECTORY[0]?.symbol ?? "", quantity: 1, buyPrice: 0 }]);
+    setRows((r) => [...r, { symbol: "", quantity: 1, buyPrice: 0 }]);
 
-  const updateRow = (idx: number, patch: Partial<Holding>) =>
+  const updateRow = (idx: number, patch: Partial<Holding>) => {
     setRows((r) => r.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
+    // Any edit to the symbol invalidates prior verification.
+    if (patch.symbol !== undefined) {
+      setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: null, verified: false } }));
+    }
+  };
 
-  const removeRow = (idx: number) => setRows((r) => r.filter((_, i) => i !== idx));
+  const removeRow = (idx: number) => {
+    setRows((r) => r.filter((_, i) => i !== idx));
+    setRowStatus((s) => {
+      const next: typeof s = {};
+      Object.entries(s).forEach(([k, v]) => {
+        const n = Number(k);
+        if (n < idx) next[n] = v;
+        else if (n > idx) next[n - 1] = v;
+      });
+      return next;
+    });
+  };
 
-  const onSave = () => {
+  const verifyRow = async (idx: number, rawSymbol: string) => {
+    const sym = rawSymbol.trim().toUpperCase();
+    if (!SYMBOL_REGEX.test(sym)) {
+      setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: "Invalid symbol", verified: false } }));
+      return false;
+    }
+    setRowStatus((s) => ({ ...s, [idx]: { loading: true, error: null, verified: false } }));
+    try {
+      const resolved = await resolveSymbol(sym);
+      setRows((r) => r.map((row, i) => (i === idx ? { ...row, symbol: resolved.symbol } : row)));
+      setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: null, verified: true } }));
+      return true;
+    } catch (e) {
+      setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: (e as Error).message, verified: false } }));
+      return false;
+    }
+  };
+
+  const onSave = async () => {
     const budgetNum = Number(budgetInput);
     const budgetMax =
       budgetInput.trim() && Number.isFinite(budgetNum) && budgetNum >= 1 ? budgetNum : null;
+    setSaveError(null);
+    setSaving(true);
+
+    // Verify any row that hasn't been confirmed yet.
+    const results = await Promise.all(
+      rows.map(async (h, i) => {
+        const status = rowStatus[i];
+        const sym = h.symbol.trim().toUpperCase();
+        if (!sym) return { ok: false, idx: i };
+        if (status?.verified) return { ok: true, idx: i };
+        const ok = await verifyRow(i, sym);
+        return { ok, idx: i };
+      }),
+    );
+    setSaving(false);
+
+    if (results.some((r) => !r.ok)) {
+      setSaveError("One or more holdings could not be verified. Fix the highlighted rows.");
+      return;
+    }
+
     const cleanHoldings = rows
       .map((h) => ({
         symbol: h.symbol.trim().toUpperCase(),
@@ -118,53 +185,73 @@ const SettingsDialog = () => {
                   <span />
                 </div>
                 {rows.map((row, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_4rem_5rem_2rem] gap-2 sm:grid-cols-[1fr_5rem_6rem_2rem]">
-                    <select
-                      value={row.symbol}
-                      onChange={(e) => updateRow(i, { symbol: e.target.value })}
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      {DIRECTORY.map((d) => (
-                        <option key={d.symbol} value={d.symbol}>
-                          {d.symbol}
-                        </option>
-                      ))}
-                    </select>
-                    <Input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={row.quantity}
-                      onChange={(e) => updateRow(i, { quantity: Number(e.target.value) })}
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={row.buyPrice}
-                      onChange={(e) => updateRow(i, { buyPrice: Number(e.target.value) })}
-                    />
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => removeRow(i)}
-                      aria-label="Remove holding"
-                      className="h-9 w-9"
-                    >
-                      <Trash2 className="h-4 w-4 text-chart-down" />
-                    </Button>
+                  <div key={i} className="space-y-1">
+                    <div className="grid grid-cols-[1fr_4rem_5rem_2rem] gap-2 sm:grid-cols-[1fr_5rem_6rem_2rem]">
+                      <div className="relative">
+                        <Input
+                          value={row.symbol}
+                          onChange={(e) => updateRow(i, { symbol: e.target.value.toUpperCase() })}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim();
+                            if (v && !rowStatus[i]?.verified) verifyRow(i, v);
+                          }}
+                          placeholder="e.g. RELIANCE"
+                          maxLength={20}
+                          className={`font-mono uppercase ${rowStatus[i]?.error ? "border-chart-down" : ""}`}
+                        />
+                        {rowStatus[i]?.loading && (
+                          <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={row.quantity}
+                        onChange={(e) => updateRow(i, { quantity: Number(e.target.value) })}
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={row.buyPrice}
+                        onChange={(e) => updateRow(i, { buyPrice: Number(e.target.value) })}
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => removeRow(i)}
+                        aria-label="Remove holding"
+                        className="h-9 w-9"
+                      >
+                        <Trash2 className="h-4 w-4 text-chart-down" />
+                      </Button>
+                    </div>
+                    {rowStatus[i]?.error && (
+                      <p className="px-1 text-[11px] text-chart-down">{rowStatus[i]!.error}</p>
+                    )}
+                    {rowStatus[i]?.verified && (
+                      <p className="px-1 text-[11px] text-chart-up">Verified on NSE</p>
+                    )}
                   </div>
                 ))}
+                <p className="px-1 pt-1 text-[11px] text-muted-foreground">
+                  Enter any NSE symbol (e.g. IRCTC, ZOMATO). Symbols are verified live against the market.
+                </p>
               </div>
             )}
           </div>
         </div>
 
         <DialogFooter>
+          {saveError && <p className="mr-auto text-xs text-chart-down">{saveError}</p>}
           <Button variant="ghost" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={onSave}>Save</Button>
+          <Button onClick={onSave} disabled={saving}>
+            {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Save
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
