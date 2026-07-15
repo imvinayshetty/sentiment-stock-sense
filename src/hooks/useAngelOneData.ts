@@ -16,14 +16,26 @@ const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // query params; callers that hit angel-one-data include their own `action` param.
 async function callFunction(fn: string, params: Record<string, string> = {}) {
   const queryParams = new URLSearchParams(params).toString();
-  const res = await fetch(`${PROJECT_URL}/functions/v1/${fn}?${queryParams}`, {
-    headers: {
-      Authorization: `Bearer ${ANON_KEY}`,
-      apikey: ANON_KEY,
-    },
-  });
-  if (!res.ok) throw new Error(`Edge function error: ${await res.text()}`);
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(`${PROJECT_URL}/functions/v1/${fn}?${queryParams}`, {
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${ANON_KEY}`,
+        apikey: ANON_KEY,
+      },
+    });
+    if (!res.ok) throw new Error(`Edge function error: ${await res.text()}`);
+    return res.json();
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      throw new Error(`Edge function timed out: ${fn}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function useStockQuotes() {

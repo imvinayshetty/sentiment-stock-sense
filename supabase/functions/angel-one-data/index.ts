@@ -437,15 +437,28 @@ async function fetchInBatches<T, R>(items: T[], batchSize: number, fn: (item: T)
 }
 
 async function _fetchChart(symbol: string, range = "5d", interval = "1d") {
-  const response = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`,
-    {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0",
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`,
+      {
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0",
+        },
       },
-    },
-  );
+    );
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      throw new Error(`Market data request timed out for ${symbol}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     throw new Error(`Market data request failed for ${symbol} (${response.status})`);
@@ -625,7 +638,6 @@ serve(async (req) => {
           direction: day7.forecast >= result.lastPrice ? "up" : "down",
           lower_bound: day7.lower,
           upper_bound: day7.upper,
-          sigma: result.sigma,
         }, { onConflict: "symbol,predicted_at,horizon_date", ignoreDuplicates: true });
         await reconcileBacktest(supabase, symbol, candles);
       } catch (e) {
