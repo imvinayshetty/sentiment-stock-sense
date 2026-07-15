@@ -72,8 +72,11 @@ function parseRss(xml: string, defaultSource: string): RawArticle[] {
 
 async function tryFetch(url: string): Promise<string | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
     try {
       const res = await fetch(url, {
+        signal: controller.signal,
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
           "Accept": "application/rss+xml, application/xml, text/xml, */*",
@@ -81,6 +84,7 @@ async function tryFetch(url: string): Promise<string | null> {
       });
       if (res.ok) return await res.text();
     } catch (_) { /* retry */ }
+    finally { clearTimeout(timer); }
     await new Promise((r) => setTimeout(r, 400));
   }
   return null;
