@@ -74,6 +74,13 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
     }
   }, [q, selectedSymbol, onSelect]);
 
+  // Keep lastExplicitRef in sync when selectedSymbol changes outside of search
+  // (e.g. deep link, external buttons). Only track changes made while the
+  // search box is empty so mid-query auto-selections don't overwrite it.
+  useEffect(() => {
+    if (!q) lastExplicitRef.current = selectedSymbol;
+  }, [selectedSymbol, q]);
+
   const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
   const topBuy = ranked.slice(0, 10);
   const topSell = ranked.slice(-10).reverse();
