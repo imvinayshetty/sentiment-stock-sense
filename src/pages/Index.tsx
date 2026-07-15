@@ -38,17 +38,17 @@ const Index = () => {
     <div className="min-h-screen bg-background gradient-mesh">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-md">
-        <div className="container flex items-center justify-between py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
+        <div className="container flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
               <BarChart3 className="h-5 w-5 text-primary-foreground" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-foreground">Stock Market Prediction</h1>
-              <p className="text-xs text-muted-foreground">ML-Powered Forecasting & Sentiment Analysis</p>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold text-foreground sm:text-lg">Stock Market Prediction</h1>
+              <p className="hidden truncate text-xs text-muted-foreground sm:block">ML-Powered Forecasting & Sentiment Analysis</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <SettingsDialog />
             <Button
               size="sm"
@@ -58,7 +58,8 @@ const Index = () => {
               className="h-7 gap-1.5 text-xs"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-              Refresh quotes
+              <span className="hidden sm:inline">Refresh quotes</span>
+              <span className="sm:hidden">Refresh</span>
             </Button>
             <span
               className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
@@ -72,9 +73,10 @@ const Index = () => {
                   marketOpen ? "animate-pulse-glow bg-primary" : "bg-muted-foreground"
                 }`}
               />
-              {marketOpen ? "Market Open" : "Market Closed"}
+              <span className="hidden sm:inline">{marketOpen ? "Market Open" : "Market Closed"}</span>
+              <span className="sm:hidden">{marketOpen ? "Open" : "Closed"}</span>
               {istTime && (
-                <span className="ml-1 font-mono opacity-70">· {istTime}</span>
+                <span className="ml-1 hidden font-mono opacity-70 sm:inline">· {istTime}</span>
               )}
             </span>
           </div>
@@ -85,7 +87,7 @@ const Index = () => {
       <TickerBar />
 
       {/* Main Content */}
-      <main className="container py-6 space-y-6">
+      <main className="container space-y-6 py-4 sm:py-6">
         {/* Search */}
         <div className="animate-fade-in-up" style={{ animationDelay: "0ms" }}>
           <StockSearch onSelect={setSelectedSymbol} selectedSymbol={selectedSymbol} />
