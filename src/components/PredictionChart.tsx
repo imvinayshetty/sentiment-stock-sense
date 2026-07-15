@@ -6,10 +6,11 @@ interface PredictionChartProps {
 }
 
 const PredictionChart = ({ symbol }: PredictionChartProps) => {
-  const { data: historicalData, isLoading } = useHistoricalData(symbol);
+  const { data, isLoading } = useHistoricalData(symbol);
+  const historicalData = data ?? [];
   const { data: forecastData } = useForecast(symbol);
 
-  if (isLoading && (historicalData?.length ?? 0) === 0) {
+  if (isLoading && historicalData.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 card-glow">
         <div className="mb-4 flex items-center justify-between">
@@ -24,7 +25,7 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
     );
   }
 
-  if (!isLoading && !historicalData?.length) {
+  if (!isLoading && historicalData.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 card-glow">
         <div className="mb-2 flex items-center justify-between">
@@ -41,7 +42,7 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
     );
   }
 
-  const history = (historicalData ?? []).map((d) => ({ ...d }));
+  const history = historicalData.map((d) => ({ ...d }));
   // Append forecast points so the chart shows a continuous projected line.
   const forecastRows = (forecastData?.forecast ?? []).map((f) => ({
     date: f.date,
@@ -78,9 +79,9 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-md bg-primary/10 px-3 py-1">
-          <span className={`h-2 w-2 rounded-full ${historicalData?.length ? "bg-primary animate-pulse-glow" : "bg-muted-foreground"}`} />
-          <span className={`font-mono text-xs ${historicalData?.length ? "text-primary" : "text-muted-foreground"}`}>
-            {isLoading ? "LOADING..." : historicalData?.length ? "LIVE" : "NO DATA"}
+          <span className={`h-2 w-2 rounded-full ${historicalData.length ? "bg-primary animate-pulse-glow" : "bg-muted-foreground"}`} />
+          <span className={`font-mono text-xs ${historicalData.length ? "text-primary" : "text-muted-foreground"}`}>
+            {isLoading ? "LOADING..." : historicalData.length ? "LIVE" : "NO DATA"}
           </span>
         </div>
       </div>
