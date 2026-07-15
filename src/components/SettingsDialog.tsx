@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUserSettings, type Holding } from "@/hooks/useUserSettings";
 import { resolveSymbol } from "@/hooks/useAngelOneData";
+import { getStockDirectory } from "@/lib/stockData";
 
 const SYMBOL_REGEX = /^[A-Z0-9&_\-]{1,20}$/;
 
@@ -26,6 +27,8 @@ const SettingsDialog = () => {
   const [rowStatus, setRowStatus] = useState<Record<number, { loading: boolean; error: string | null; verified: boolean }>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [openSuggestIdx, setOpenSuggestIdx] = useState<number | null>(null);
+  const directory = getStockDirectory();
 
   useEffect(() => {
     if (!open) return;
@@ -50,6 +53,17 @@ const SettingsDialog = () => {
     if (patch.symbol !== undefined) {
       setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: null, verified: false } }));
     }
+  };
+
+  const getSuggestions = (query: string) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return directory
+      .filter(
+        (d) =>
+          d.symbol.toLowerCase().includes(q) || d.name.toLowerCase().includes(q),
+      )
+      .slice(0, 8);
   };
 
   const removeRow = (idx: number) => {
@@ -191,8 +205,11 @@ const SettingsDialog = () => {
                         <Input
                           value={row.symbol}
                           onChange={(e) => updateRow(i, { symbol: e.target.value.toUpperCase() })}
+                          onFocus={() => setOpenSuggestIdx(i)}
                           onBlur={(e) => {
                             const v = e.target.value.trim();
+                            // Delay so click on a suggestion registers first.
+                            setTimeout(() => setOpenSuggestIdx((cur) => (cur === i ? null : cur)), 150);
                             if (v && !rowStatus[i]?.verified) verifyRow(i, v);
                           }}
                           placeholder="e.g. RELIANCE"
@@ -202,6 +219,33 @@ const SettingsDialog = () => {
                         {rowStatus[i]?.loading && (
                           <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
                         )}
+                        {openSuggestIdx === i && row.symbol.trim() !== "" && (() => {
+                          const suggestions = getSuggestions(row.symbol);
+                          return (
+                            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+                              {suggestions.length > 0 ? (
+                                suggestions.map((s) => (
+                                  <button
+                                    key={s.symbol}
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                      updateRow(i, { symbol: s.symbol });
+                                      setOpenSuggestIdx(null);
+                                      verifyRow(i, s.symbol);
+                                    }}
+                                    className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent"
+                                  >
+                                    <span className="font-mono font-semibold text-foreground">{s.symbol}</span>
+                                    <span className="truncate text-muted-foreground">{s.name}</span>
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="px-3 py-2 text-xs text-muted-foreground">No match</div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <Input
                         type="number"
