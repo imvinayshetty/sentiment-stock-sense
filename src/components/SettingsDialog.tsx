@@ -122,20 +122,26 @@ const SettingsDialog = () => {
       return;
     }
 
+    const seen = new Set<string>();
     const cleanHoldings = rows
       .map((h) => ({
         symbol: h.symbol.trim().toUpperCase(),
         quantity: Number(h.quantity),
         buyPrice: Number(h.buyPrice),
       }))
-      .filter(
-        (h) =>
-          h.symbol &&
-          Number.isFinite(h.quantity) &&
-          h.quantity > 0 &&
-          Number.isFinite(h.buyPrice) &&
-          h.buyPrice >= 0,
-      );
+      .filter((h) => {
+        if (
+          !h.symbol ||
+          !Number.isFinite(h.quantity) ||
+          h.quantity <= 0 ||
+          !Number.isFinite(h.buyPrice) ||
+          h.buyPrice < 0
+        )
+          return false;
+        if (seen.has(h.symbol)) return false;
+        seen.add(h.symbol);
+        return true;
+      });
     save({ budgetMax, holdings: cleanHoldings });
     setOpen(false);
   };
@@ -199,7 +205,7 @@ const SettingsDialog = () => {
                   <span />
                 </div>
                 {rows.map((row, i) => (
-                  <div key={i} className="space-y-1">
+                  <div key={`${row.symbol || "empty"}-${i}`} className="space-y-1">
                     <div className="grid grid-cols-[1fr_4rem_5rem_2rem] gap-2 sm:grid-cols-[1fr_5rem_6rem_2rem]">
                       <div className="relative">
                         <Input
