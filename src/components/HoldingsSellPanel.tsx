@@ -42,12 +42,19 @@ function HoldingRow({
     const macd = forecast.indicators?.macd ?? 0;
     const macdSig = forecast.indicators?.macdSignal ?? 0;
 
+    // Normalize MACD histogram by price so high-price stocks don't dominate
+    // (raw MACD scales with price; percentage-based makes it comparable).
+    const macdNorm = Math.max(
+      -1,
+      Math.min(1, ((macd - macdSig) / (price || 1)) * 200),
+    );
+
     // Weighted score: positive = hold, negative = sell.
     const score =
       forecastChangePct * 1.0 +
       (sentScore - 50) * 0.05 +
       -(rsi - 50) * 0.05 +
-      (macd - macdSig) * 0.5;
+      macdNorm * 0.5;
 
     if (forecastChangePct < 0) reasons.push(`Forecast ${forecastChangePct.toFixed(1)}%`);
     else reasons.push(`Forecast +${forecastChangePct.toFixed(1)}%`);
