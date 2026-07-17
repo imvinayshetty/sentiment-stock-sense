@@ -205,7 +205,7 @@ const SettingsDialog = () => {
                   <span />
                 </div>
                 {rows.map((row, i) => (
-                  <div key={i} className="space-y-1">
+                  <div key={`${row.symbol || "empty"}-${i}`} className="space-y-1">
                     <div className="grid grid-cols-[1fr_4rem_5rem_2rem] gap-2 sm:grid-cols-[1fr_5rem_6rem_2rem]">
                       <div className="relative">
                         <Input
