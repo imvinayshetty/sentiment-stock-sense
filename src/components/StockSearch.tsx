@@ -114,7 +114,8 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
   const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
   const affordable = budgetMax != null ? ranked.filter((s) => s.price <= budgetMax) : ranked;
   const topBuy = affordable.slice(0, 10);
-  const topSell = ranked.slice(-10).reverse();
+  // Only compute when there are no holdings; otherwise HoldingsSellPanel replaces this list.
+  const topSell = holdings.length === 0 ? ranked.slice(-10).reverse() : [];
   const showNoVerifiedData = !isLoading && stocks.length === 0;
 
   const renderCard = (stock: StockQuote) => (
