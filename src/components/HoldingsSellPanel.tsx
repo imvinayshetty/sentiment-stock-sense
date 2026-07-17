@@ -135,9 +135,9 @@ const HoldingsSellPanel = ({ holdings, onSelect, selectedSymbol }: Props) => {
         <span className="ml-auto text-xs text-muted-foreground">Forecast + sentiment + RSI/MACD</span>
       </header>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {holdings.map((h, i) => (
+        {holdings.map((h) => (
           <HoldingRow
-            key={`${h.symbol}-${i}`}
+            key={h.symbol}
             holding={h}
             currentPrice={priceMap.get(h.symbol)}
             onSelect={onSelect}
