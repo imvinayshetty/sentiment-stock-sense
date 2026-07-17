@@ -37,7 +37,6 @@ function HoldingRow({
     const fc = forecast.forecast;
     const day7 = fc[fc.length - 1];
     const forecastChangePct = ((day7.forecast - price) / price) * 100;
-    const peak = fc.reduce((m, p) => (p.upper > m ? p.upper : m), fc[0].upper);
     const sentScore = sentiment?.score ?? 50;
     const rsi = forecast.indicators?.rsi ?? 50;
     const macd = forecast.indicators?.macd ?? 0;
@@ -61,7 +60,15 @@ function HoldingRow({
     else if (score < 0) recommendation = "SELL";
     else recommendation = "HOLD";
 
-    targetPrice = Math.max(price, peak);
+    // For SELL/STRONG SELL show the model's expected 7-day price (may be below
+    // current price). For HOLD show the forecast peak upper band as an upside
+    // reference.
+    if (recommendation === "HOLD") {
+      const peak = fc.reduce((m, p) => (p.upper > m ? p.upper : m), fc[0].upper);
+      targetPrice = Math.max(price, peak);
+    } else {
+      targetPrice = day7.forecast;
+    }
   }
 
   const isSell = recommendation !== "HOLD";
@@ -96,9 +103,10 @@ function HoldingRow({
           {pnl >= 0 ? "+" : ""}₹{pnl.toFixed(0)} ({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
         </span>
       </div>
-      {isSell && targetPrice != null && (
+      {targetPrice != null && (
         <div className="mt-1 text-[10px] text-muted-foreground">
-          Target sell: <span className="font-mono text-foreground">₹{targetPrice.toFixed(2)}</span>
+          {isSell ? "Expected in 7d" : "Upside target"}:{" "}
+          <span className="font-mono text-foreground">₹{targetPrice.toFixed(2)}</span>
         </div>
       )}
       {reasons.length > 0 && (
