@@ -122,20 +122,26 @@ const SettingsDialog = () => {
       return;
     }
 
+    const seen = new Set<string>();
     const cleanHoldings = rows
       .map((h) => ({
         symbol: h.symbol.trim().toUpperCase(),
         quantity: Number(h.quantity),
         buyPrice: Number(h.buyPrice),
       }))
-      .filter(
-        (h) =>
-          h.symbol &&
-          Number.isFinite(h.quantity) &&
-          h.quantity > 0 &&
-          Number.isFinite(h.buyPrice) &&
-          h.buyPrice >= 0,
-      );
+      .filter((h) => {
+        if (
+          !h.symbol ||
+          !Number.isFinite(h.quantity) ||
+          h.quantity <= 0 ||
+          !Number.isFinite(h.buyPrice) ||
+          h.buyPrice < 0
+        )
+          return false;
+        if (seen.has(h.symbol)) return false;
+        seen.add(h.symbol);
+        return true;
+      });
     save({ budgetMax, holdings: cleanHoldings });
     setOpen(false);
   };
