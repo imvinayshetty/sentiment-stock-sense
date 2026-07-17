@@ -12,6 +12,8 @@ export interface UserSettings {
 }
 
 const STORAGE_KEY = "user-settings-v1";
+// When bumping STORAGE_KEY, add a migration branch in read() that reads the
+// previous key, transforms it, writes to the new key, then clears the old one.
 const EVENT = "user-settings-changed";
 
 const defaults: UserSettings = { budgetMax: null, holdings: [] };
