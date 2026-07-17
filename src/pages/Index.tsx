@@ -29,8 +29,9 @@ const Index = () => {
     // Force an actual refetch (refetchType: "active") so queries with long
     // staleTime (e.g. news-sentiment at 65min) don't silently skip refreshing.
     queryClient.invalidateQueries({ queryKey: ["historical", selectedSymbol], refetchType: "active" });
-    queryClient.invalidateQueries({ queryKey: ["forecast", selectedSymbol], refetchType: "active" });
-    queryClient.invalidateQueries({ queryKey: ["news-sentiment", selectedSymbol], refetchType: "active" });
+    // Prefix-match so HoldingsSellPanel rows (each keyed by their own symbol) also refresh.
+    queryClient.invalidateQueries({ queryKey: ["forecast"], refetchType: "active" });
+    queryClient.invalidateQueries({ queryKey: ["news-sentiment"], refetchType: "active" });
     queryClient.invalidateQueries({ queryKey: ["backtest", selectedSymbol], refetchType: "active" });
   };
 
