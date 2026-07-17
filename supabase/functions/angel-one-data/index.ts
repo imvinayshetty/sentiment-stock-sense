@@ -734,7 +734,8 @@ serve(async (req) => {
       }
       const info = resolveSymbolInfo(symbol);
       try {
-        const chart = await fetchChart(info.yahooSymbol, "5d", "1d");
+        // 1d range is enough to verify the symbol resolves and has a price.
+        const chart = await fetchChart(info.yahooSymbol, "1d", "1d");
         const quote = mapQuote(symbol, info, chart);
         if (!quote || !(quote.price > 0)) throw new Error("empty");
         return new Response(JSON.stringify({

@@ -104,6 +104,18 @@ const SettingsDialog = () => {
     setSaveError(null);
     setSaving(true);
 
+    const upperSyms = rows.map((h) => h.symbol.trim().toUpperCase());
+    const duplicates = Array.from(
+      new Set(upperSyms.filter((s, i) => s && upperSyms.indexOf(s) !== i)),
+    );
+    if (duplicates.length) {
+      setSaving(false);
+      setSaveError(
+        `Duplicate symbols: ${duplicates.join(", ")}. Each stock can only appear once.`,
+      );
+      return;
+    }
+
     // Verify any row that hasn't been confirmed yet.
     const results = await Promise.all(
       rows.map(async (h, i) => {
