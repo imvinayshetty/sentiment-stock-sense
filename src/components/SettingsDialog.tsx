@@ -29,6 +29,8 @@ const SettingsDialog = () => {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [openSuggestIdx, setOpenSuggestIdx] = useState<number | null>(null);
   const directory = getStockDirectory();
+  // Track last-verified symbol per row to skip redundant resolveSymbol calls on blur.
+  const [lastVerifiedSymbol, setLastVerifiedSymbol] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -85,11 +87,18 @@ const SettingsDialog = () => {
       setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: "Invalid symbol", verified: false } }));
       return false;
     }
+    // Curated symbols are known-valid — skip the edge function round-trip.
+    if (directory.some((d) => d.symbol === sym)) {
+      setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: null, verified: true } }));
+      setLastVerifiedSymbol((m) => ({ ...m, [idx]: sym }));
+      return true;
+    }
     setRowStatus((s) => ({ ...s, [idx]: { loading: true, error: null, verified: false } }));
     try {
       const resolved = await resolveSymbol(sym);
       setRows((r) => r.map((row, i) => (i === idx ? { ...row, symbol: resolved.symbol } : row)));
       setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: null, verified: true } }));
+      setLastVerifiedSymbol((m) => ({ ...m, [idx]: resolved.symbol }));
       return true;
     } catch (e) {
       setRowStatus((s) => ({ ...s, [idx]: { loading: false, error: (e as Error).message, verified: false } }));
@@ -100,9 +109,16 @@ const SettingsDialog = () => {
   const onSave = async () => {
     const budgetNum = Number(budgetInput);
     const budgetMax =
-      budgetInput.trim() && Number.isFinite(budgetNum) && budgetNum >= 1 ? budgetNum : null;
+      budgetInput.trim() && Number.isFinite(budgetNum) && budgetNum >= 1 ? Math.round(budgetNum) : null;
     setSaveError(null);
     setSaving(true);
+
+    // Flag empty rows explicitly so the user knows which row to fix.
+    if (rows.some((h) => !h.symbol.trim())) {
+      setSaving(false);
+      setSaveError("One or more rows have an empty symbol — fill in or remove them.");
+      return;
+    }
 
     const upperSyms = rows.map((h) => h.symbol.trim().toUpperCase());
     const duplicates = Array.from(
@@ -147,7 +163,7 @@ const SettingsDialog = () => {
           !Number.isFinite(h.quantity) ||
           h.quantity <= 0 ||
           !Number.isFinite(h.buyPrice) ||
-          h.buyPrice < 0
+          h.buyPrice <= 0
         )
           return false;
         if (seen.has(h.symbol)) return false;
@@ -228,7 +244,10 @@ const SettingsDialog = () => {
                             const v = e.target.value.trim();
                             // Delay so click on a suggestion registers first.
                             setTimeout(() => setOpenSuggestIdx((cur) => (cur === i ? null : cur)), 150);
-                            if (v && !rowStatus[i]?.verified) verifyRow(i, v);
+                            const upper = v.toUpperCase();
+                            if (v && !rowStatus[i]?.verified && lastVerifiedSymbol[i] !== upper) {
+                              verifyRow(i, v);
+                            }
                           }}
                           placeholder="e.g. RELIANCE"
                           maxLength={20}
@@ -246,7 +265,7 @@ const SettingsDialog = () => {
                                   <button
                                     key={s.symbol}
                                     type="button"
-                                    onMouseDown={(e) => e.preventDefault()}
+                                    onPointerDown={(e) => e.preventDefault()}
                                     onClick={() => {
                                       updateRow(i, { symbol: s.symbol });
                                       setOpenSuggestIdx(null);

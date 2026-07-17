@@ -31,6 +31,7 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
     // 30-day target: extrapolate the same model's per-trading-day growth rate.
     const tradingDays = fc.length; // 7
     const perDayGrowth = price > 0 ? Math.pow(day7.forecast / price, 1 / tradingDays) : 1;
+    const isFlat = Math.abs(perDayGrowth - 1) < 0.0001;
     const horizon30 = 30;
     const expected30 = price * Math.pow(perDayGrowth, horizon30);
     const band30 = expected30 * sigma * Math.sqrt(horizon30);
@@ -41,7 +42,7 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
       changePct: ((expected30 - price) / price) * 100,
     };
 
-    return { sigma, d7, d30 };
+    return { sigma, d7, d30, isFlat };
   }, [forecastData]);
 
   if (isLoading || !projections) {
@@ -118,7 +119,11 @@ const PriceTarget = ({ symbol }: PriceTargetProps) => {
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {renderHorizon("Next 7 days", projections.d7)}
-        {renderHorizon("Next 30 days", projections.d30, "lower confidence · extrapolated")}
+        {renderHorizon(
+          "Next 30 days",
+          projections.d30,
+          projections.isFlat ? "flat — no directional signal" : "lower confidence · extrapolated",
+        )}
       </div>
       <p className="mt-3 text-[10px] text-muted-foreground/70">
         Targets come from the same SES + linear-regression + RSI/MACD model used in the forecast chart.
