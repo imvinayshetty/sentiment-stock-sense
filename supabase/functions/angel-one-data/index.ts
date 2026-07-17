@@ -745,9 +745,19 @@ serve(async (req) => {
           exchange: "NSE",
           curated: Boolean(STOCK_TOKENS[symbol]),
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      } catch {
-        return new Response(JSON.stringify({ success: false, error: "Symbol not found on NSE" }), {
-          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      } catch (e) {
+        const msg = (e as Error)?.message ?? "";
+        // Distinguish transient upstream issues (timeout/429/network) from a
+        // genuinely unknown symbol so the client can hint the user to retry.
+        const transient = /timed out|abort|429|network|fetch failed|5\d\d/i.test(msg);
+        return new Response(JSON.stringify({
+          success: false,
+          error: transient
+            ? "Symbol lookup temporarily unavailable — try again in a moment"
+            : "Symbol not found on NSE (or service temporarily unavailable — try again)",
+        }), {
+          status: transient ? 503 : 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
