@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   ArrowDownCircle,
@@ -159,16 +159,12 @@ function getSessionId(): string {
 const DemoTrading = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<StockQuote | null>(null);
-  const searchRef = useRef<HTMLDivElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
   const [resolveState, setResolveState] = useState<{ loading: boolean; error: string | null }>({
     loading: false,
     error: null,
   });
-  const [dropdownPos, setDropdownPos] = useState<{
-    left: number;
-    top: number;
-    width: number;
-  } | null>(null);
   const [trades, setTrades] = useState<Trade[]>(() =>
     migrateLedger(loadState<Trade[]>("trades", []), loadState("holdings", undefined)),
   );
