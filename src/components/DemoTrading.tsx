@@ -19,11 +19,15 @@ import { supabase } from "@/integrations/supabase/client";
 interface Trade {
   id: string;
   symbol: string;
+  /** Company name captured at execution time (for holdings display). */
+  name?: string;
   side: "BUY" | "SELL";
   price: number;
   quantity: number;
   total: number;
   time: string;
+  /** Execution timestamp (ISO) used to replay the ledger deterministically. */
+  at?: string;
   /** Stop-loss level attached at buy time (BUY rows only). */
   stopLossPrice?: number;
   /** Take-profit level attached at buy time (BUY rows only). */
@@ -32,7 +36,9 @@ interface Trade {
   exitReason?: "manual" | ExitReason;
 }
 
-interface Holding {
+/** Position derived from the trade ledger. Named to avoid colliding with the
+ *  user-settings `Holding` type, which has a different shape. */
+interface DemoHolding {
   symbol: string;
   name: string;
   quantity: number;
@@ -46,7 +52,79 @@ interface Holding {
 }
 
 const MAX_BALANCE = 100000;
-const EMPTY_POSITIONS: Holding[] = [];
+const EMPTY_POSITIONS: DemoHolding[] = [];
+/** Keep a generous ledger so derived holdings never lose their cost basis. */
+const MAX_TRADES = 500;
+
+/**
+ * Single source of truth: replay the trade ledger (oldest → newest) into
+ * positions, so holdings can never desync from order history.
+ */
+function derivePositions(trades: Trade[]): Record<string, DemoHolding> {
+  const out: Record<string, DemoHolding> = {};
+  for (let i = trades.length - 1; i >= 0; i--) {
+    const t = trades[i];
+    const pos = out[t.symbol];
+    if (t.side === "BUY") {
+      const qty = (pos?.quantity ?? 0) + t.quantity;
+      const cost = (pos ? pos.avgPrice * pos.quantity : 0) + t.total;
+      out[t.symbol] = {
+        symbol: t.symbol,
+        name: t.name ?? pos?.name ?? t.symbol,
+        quantity: qty,
+        avgPrice: qty > 0 ? cost / qty : t.price,
+        // A newly supplied level replaces the previous one for the (now
+        // averaged) position; otherwise the existing level carries over.
+        stopLossPrice: t.stopLossPrice ?? pos?.stopLossPrice,
+        stopLossPercent:
+          t.stopLossPrice != null
+            ? ((t.stopLossPrice - t.price) / t.price) * 100
+            : pos?.stopLossPercent,
+        targetPrice: t.targetPrice ?? pos?.targetPrice,
+        targetPercent:
+          t.targetPrice != null
+            ? ((t.targetPrice - t.price) / t.price) * 100
+            : pos?.targetPercent,
+      };
+    } else if (pos) {
+      const remaining = pos.quantity - t.quantity;
+      if (remaining <= 0) delete out[t.symbol];
+      else out[t.symbol] = { ...pos, quantity: remaining };
+    }
+  }
+  return out;
+}
+
+/**
+ * Legacy states stored `holdings` separately. If a saved position is not
+ * reproducible from the ledger, synthesize an opening BUY row so the derived
+ * view keeps it (and its exit levels).
+ */
+function migrateLedger(
+  trades: Trade[],
+  legacy?: Record<string, DemoHolding>,
+): Trade[] {
+  if (!legacy) return trades;
+  const derived = derivePositions(trades);
+  const synthetic: Trade[] = [];
+  Object.values(legacy).forEach((h) => {
+    if (derived[h.symbol] || !(h.quantity > 0)) return;
+    synthetic.push({
+      id: crypto.randomUUID(),
+      symbol: h.symbol,
+      name: h.name,
+      side: "BUY",
+      price: h.avgPrice,
+      quantity: h.quantity,
+      total: h.avgPrice * h.quantity,
+      stopLossPrice: h.stopLossPrice,
+      targetPrice: h.targetPrice,
+      time: "—",
+    });
+  });
+  // Synthetic openings are the oldest entries in the ledger.
+  return [...trades, ...synthetic];
+}
 const STORAGE_KEY = "demo-trading-state";
 const SESSION_KEY = "demo-session-id";
 
@@ -101,21 +179,25 @@ const DemoTrading = () => {
     top: number;
     width: number;
   } | null>(null);
-  const [trades, setTrades] = useState<Trade[]>(() => loadState("trades", []));
+  const [trades, setTrades] = useState<Trade[]>(() =>
+    migrateLedger(loadState<Trade[]>("trades", []), loadState("holdings", undefined)),
+  );
   const [quantity, setQuantity] = useState(1);
   const [stopLossMethod, setStopLossMethod] = useState<"percentage" | "price">("percentage");
   const [stopLossValue, setStopLossValue] = useState<string>("");
   const [targetValue, setTargetValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
   const [topUp, setTopUp] = useState("");
-  const [holdings, setHoldings] = useState<Record<string, Holding>>(() =>
-    loadState("holdings", {}),
-  );
   const { data: quotes, isLoading } = useStockQuotes();
   const { toast } = useToast();
 
   const sessionId = useRef(getSessionId());
   const remoteLoaded = useRef(false);
+  // Latest ledger for callbacks that must not close over a stale array.
+  const tradesRef = useRef(trades);
+  useEffect(() => {
+    tradesRef.current = trades;
+  }, [trades]);
 
   // Load the saved portfolio from the backend (primary), falling back to the
   // localStorage copy that already seeded the initial state.
@@ -125,11 +207,14 @@ const DemoTrading = () => {
       try {
         const { data } = await supabase
           .from("demo_state").select("state").eq("session_id", sessionId.current).maybeSingle();
-        const s = data?.state as { trades?: Trade[]; balance?: number; holdings?: Record<string, Holding> } | null;
+        const s = data?.state as {
+          trades?: Trade[];
+          balance?: number;
+          holdings?: Record<string, DemoHolding>;
+        } | null;
         if (!cancelled && s) {
-          if (Array.isArray(s.trades)) setTrades(s.trades);
+          if (Array.isArray(s.trades)) setTrades(migrateLedger(s.trades, s.holdings));
           if (typeof s.balance === "number") setBalance(s.balance);
-          if (s.holdings) setHoldings(s.holdings);
         }
       } catch (e) {
         console.error("Demo portfolio load failed, using local cache:", e);
@@ -142,7 +227,7 @@ const DemoTrading = () => {
 
   // Persist to localStorage (fast cache) + backend (debounced, after remote load).
   useEffect(() => {
-    const payload = { trades, balance, holdings };
+    const payload = { trades, balance };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch { /* ignore quota / disabled storage */ }
@@ -154,12 +239,11 @@ const DemoTrading = () => {
         .then(({ error }) => { if (error) console.error("Demo portfolio save failed:", error); });
     }, 600);
     return () => clearTimeout(t);
-  }, [trades, balance, holdings]);
+  }, [trades, balance]);
 
   const handleReset = async () => {
     setTrades([]);
     setBalance(0);
-    setHoldings({});
     setSelected(null);
     setQuantity(1);
     setTopUp("");
@@ -302,6 +386,28 @@ const DemoTrading = () => {
     });
   };
 
+  // Positions are derived from the ledger — never stored separately (no desync).
+  const holdings = useMemo(() => derivePositions(trades), [trades]);
+  const holdingsList = useMemo(() => Object.values(holdings), [holdings]);
+
+  /** Credit sale proceeds, warning when the demo balance cap truncates them. */
+  const creditProceeds = useCallback(
+    (proceeds: number) => {
+      setBalance((b) => {
+        const next = Math.min(MAX_BALANCE, b + proceeds);
+        const lost = b + proceeds - next;
+        if (lost > 0.005) {
+          toast({
+            title: "Balance capped",
+            description: `₹${lost.toFixed(2)} of the proceeds was not credited — demo balance is capped at ₹${MAX_BALANCE.toLocaleString("en-IN")}.`,
+          });
+        }
+        return next;
+      });
+    },
+    [toast],
+  );
+
   const handleTrade = (side: "BUY" | "SELL") => {
     if (!liveSelected) return;
     const qty = Math.max(1, Math.floor(quantity) || 1);
@@ -377,28 +483,6 @@ const DemoTrading = () => {
         return;
       }
       setBalance((b) => b - total);
-      setHoldings((prev) => {
-        const existing = prev[liveSelected.symbol];
-        const newQty = (existing?.quantity ?? 0) + qty;
-        const newAvg = existing
-          ? (existing.avgPrice * existing.quantity + total) / newQty
-          : liveSelected.price;
-        return {
-          ...prev,
-          [liveSelected.symbol]: {
-            symbol: liveSelected.symbol,
-            name: liveSelected.name,
-            quantity: newQty,
-            avgPrice: newAvg,
-            // A newly supplied stop loss replaces any previous level for the
-            // (now averaged) position; otherwise keep the existing one.
-            stopLossPrice: slPrice ?? existing?.stopLossPrice,
-            stopLossPercent: slPrice != null ? slPercent : existing?.stopLossPercent,
-            targetPrice: tgtPrice ?? existing?.targetPrice,
-            targetPercent: tgtPrice != null ? tgtPercent : existing?.targetPercent,
-          },
-        };
-      });
     } else {
       const existing = holdings[liveSelected.symbol];
       if (!existing || existing.quantity < qty) {
@@ -409,26 +493,18 @@ const DemoTrading = () => {
         });
         return;
       }
-      setBalance((b) => Math.min(MAX_BALANCE, b + total));
-      setHoldings((prev) => {
-        const remaining = existing.quantity - qty;
-        const next = { ...prev };
-        if (remaining <= 0) {
-          delete next[liveSelected.symbol];
-        } else {
-          next[liveSelected.symbol] = { ...existing, quantity: remaining };
-        }
-        return next;
-      });
+      creditProceeds(total);
     }
 
     const trade: Trade = {
       id: crypto.randomUUID(),
       symbol: liveSelected.symbol,
+      name: liveSelected.name,
       side,
       price: liveSelected.price,
       quantity: qty,
       total,
+      at: new Date().toISOString(),
       stopLossPrice: side === "BUY" ? slPrice : undefined,
       targetPrice: side === "BUY" ? tgtPrice : undefined,
       exitReason: side === "SELL" ? "manual" : undefined,
@@ -438,7 +514,7 @@ const DemoTrading = () => {
         second: "2-digit",
       }),
     };
-    setTrades((prev) => [trade, ...prev].slice(0, 50));
+    setTrades((prev) => [trade, ...prev].slice(0, MAX_TRADES));
     if (side === "BUY") {
       setStopLossValue("");
       setTargetValue("");
@@ -451,46 +527,43 @@ const DemoTrading = () => {
     });
   };
 
-  const holdingsList = useMemo(() => Object.values(holdings), [holdings]);
-
   // Auto-exit a position when live price breaches its stop loss or target.
   const handleAutoExit = useCallback(
     (symbol: string, exitPrice: number, reason: ExitReason) => {
-      setHoldings((prev) => {
-        const pos = prev[symbol];
-        if (!pos) return prev;
-        const proceeds = exitPrice * pos.quantity;
-        setBalance((b) => Math.min(MAX_BALANCE, b + proceeds));
-        setTrades((t) =>
-          [
-            {
-              id: crypto.randomUUID(),
-              symbol,
-              side: "SELL" as const,
-              price: exitPrice,
-              quantity: pos.quantity,
-              total: proceeds,
-              exitReason: reason,
-              time: new Date().toLocaleTimeString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              }),
-            },
-            ...t,
-          ].slice(0, 50),
-        );
-        toast({
-          title: reason === "target_reached" ? "Target reached" : "Stop loss triggered",
-          description: `${symbol}: sold ${pos.quantity} @ ₹${exitPrice.toFixed(2)}`,
-          variant: reason === "target_reached" ? "default" : "destructive",
-        });
-        const next = { ...prev };
-        delete next[symbol];
-        return next;
+      // Read the position from the latest ledger (no stale closure), then close
+      // the ENTIRE position in one SELL row.
+      const pos = derivePositions(tradesRef.current)[symbol];
+      if (!pos) return;
+      const proceeds = exitPrice * pos.quantity;
+      creditProceeds(proceeds);
+      setTrades((t) =>
+        [
+          {
+            id: crypto.randomUUID(),
+            symbol,
+            name: pos.name,
+            side: "SELL" as const,
+            price: exitPrice,
+            quantity: pos.quantity,
+            total: proceeds,
+            at: new Date().toISOString(),
+            exitReason: reason,
+            time: new Date().toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          },
+          ...t,
+        ].slice(0, MAX_TRADES),
+      );
+      toast({
+        title: reason === "target_reached" ? "Target reached" : "Stop loss triggered",
+        description: `${pos.symbol}: sold ${pos.quantity} @ ₹${exitPrice.toFixed(2)}`,
+        variant: reason === "target_reached" ? "default" : "destructive",
       });
     },
-    [toast],
+    [toast, creditProceeds],
   );
 
   // Only auto-exit while the market is open — closed-market last prices should
@@ -545,6 +618,17 @@ const DemoTrading = () => {
           Max balance ₹{MAX_BALANCE.toLocaleString("en-IN")}
         </p>
       </div>
+
+      {quotes?.source === "last-close" && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-chart-down/40 bg-chart-down/10 p-3 text-xs text-chart-down">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Prices shown are the last closing values, not live quotes
+            {quotes?.marketStatus !== "OPEN" ? " (market closed)" : ""}. Orders
+            execute at these stale prices and auto-exit rules stay paused.
+          </span>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
@@ -664,8 +748,11 @@ const DemoTrading = () => {
                 <input
                   type="number"
                   min={1}
+                  step={1}
                   value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  onChange={(e) =>
+                    setQuantity(Math.max(1, Math.floor(Number(e.target.value)) || 1))
+                  }
                   disabled={!liveSelected}
                   className="w-20 rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                 />
