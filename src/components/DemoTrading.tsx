@@ -104,6 +104,7 @@ const DemoTrading = () => {
   const [quantity, setQuantity] = useState(1);
   const [stopLossMethod, setStopLossMethod] = useState<"percentage" | "price">("percentage");
   const [stopLossValue, setStopLossValue] = useState<string>("");
+  const [targetValue, setTargetValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
   const [topUp, setTopUp] = useState("");
   const [holdings, setHoldings] = useState<Record<string, Holding>>(() =>
@@ -306,6 +307,8 @@ const DemoTrading = () => {
     const total = liveSelected.price * qty;
     let slPrice: number | undefined;
     let slPercent: number | undefined;
+    let tgtPrice: number | undefined;
+    let tgtPercent: number | undefined;
 
     if (side === "BUY" && stopLossValue.trim() !== "") {
       const v = Number(stopLossValue);
@@ -325,6 +328,38 @@ const DemoTrading = () => {
         toast({
           title: "Invalid stop loss",
           description: `Stop loss must be above 0 and below ₹${liveSelected.price.toFixed(2)}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    if (side === "BUY" && targetValue.trim() !== "") {
+      const v = Number(targetValue);
+      if (!Number.isFinite(v)) {
+        toast({ title: "Invalid target", description: "Enter a number.", variant: "destructive" });
+        return;
+      }
+      if (stopLossMethod === "percentage") {
+        const pct = Math.abs(v);
+        tgtPercent = pct;
+        tgtPrice = liveSelected.price * (1 + pct / 100);
+      } else {
+        tgtPrice = v;
+        tgtPercent = ((v - liveSelected.price) / liveSelected.price) * 100;
+      }
+      if (!(tgtPrice > 0) || tgtPrice <= liveSelected.price) {
+        toast({
+          title: "Invalid target",
+          description: `Target must be above the entry price ₹${liveSelected.price.toFixed(2)}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      if (slPrice != null && tgtPrice <= slPrice) {
+        toast({
+          title: "Invalid limits",
+          description: "Target price must be above the stop loss price.",
           variant: "destructive",
         });
         return;
