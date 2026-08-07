@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
 import { useAutoExitMonitoring, type ExitReason } from "@/hooks/useAutoExitMonitoring";
+import { useAnchoredDropdown } from "@/hooks/useAnchoredDropdown";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
