@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   ArrowDownCircle,
@@ -7,8 +7,10 @@ import {
   PlusCircle,
   RotateCcw,
   Loader2,
+  ShieldAlert,
 } from "lucide-react";
 import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
+import { useStopLossMonitoring } from "@/hooks/useStopLossMonitoring";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -21,6 +23,10 @@ interface Trade {
   quantity: number;
   total: number;
   time: string;
+  /** Stop-loss level attached at buy time (BUY rows only). */
+  stopLossPrice?: number;
+  /** How a SELL row was triggered. Older rows have no value = manual. */
+  exitReason?: "manual" | "stop_loss";
 }
 
 interface Holding {
@@ -28,6 +34,9 @@ interface Holding {
   name: string;
   quantity: number;
   avgPrice: number;
+  /** Optional protective exit level for the whole position. */
+  stopLossPrice?: number;
+  stopLossPercent?: number;
 }
 
 const MAX_BALANCE = 100000;
