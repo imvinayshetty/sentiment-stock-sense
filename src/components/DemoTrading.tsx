@@ -45,10 +45,8 @@ interface DemoHolding {
   avgPrice: number;
   /** Optional protective exit level for the whole position. */
   stopLossPrice?: number;
-  stopLossPercent?: number;
   /** Optional take-profit exit level for the whole position. */
   targetPrice?: number;
-  targetPercent?: number;
 }
 
 const MAX_BALANCE = 100000;
@@ -76,15 +74,7 @@ function derivePositions(trades: Trade[]): Record<string, DemoHolding> {
         // A newly supplied level replaces the previous one for the (now
         // averaged) position; otherwise the existing level carries over.
         stopLossPrice: t.stopLossPrice ?? pos?.stopLossPrice,
-        stopLossPercent:
-          t.stopLossPrice != null
-            ? ((t.stopLossPrice - t.price) / t.price) * 100
-            : pos?.stopLossPercent,
         targetPrice: t.targetPrice ?? pos?.targetPrice,
-        targetPercent:
-          t.targetPrice != null
-            ? ((t.targetPrice - t.price) / t.price) * 100
-            : pos?.targetPercent,
       };
     } else if (pos) {
       const remaining = pos.quantity - t.quantity;
@@ -184,6 +174,7 @@ const DemoTrading = () => {
   );
   const [quantity, setQuantity] = useState(1);
   const [stopLossMethod, setStopLossMethod] = useState<"percentage" | "price">("percentage");
+  const [targetMethod, setTargetMethod] = useState<"percentage" | "price">("percentage");
   const [stopLossValue, setStopLossValue] = useState<string>("");
   const [targetValue, setTargetValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
@@ -447,7 +438,7 @@ const DemoTrading = () => {
         toast({ title: "Invalid target", description: "Enter a number.", variant: "destructive" });
         return;
       }
-      if (stopLossMethod === "percentage") {
+      if (targetMethod === "percentage") {
         const pct = Math.abs(v);
         tgtPercent = pct;
         tgtPrice = liveSelected.price * (1 + pct / 100);
