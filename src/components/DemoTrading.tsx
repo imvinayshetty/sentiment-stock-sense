@@ -180,15 +180,33 @@ const DemoTrading = () => {
     : null;
 
   const q = query.trim().toLowerCase();
-  const matches = q
-    ? stocks
-        .filter(
-          (s) =>
-            s.symbol.toLowerCase().includes(q) ||
-            s.name.toLowerCase().includes(q),
-        )
-        .slice(0, 8)
-    : [];
+  // Search the full curated directory (not just symbols with live quotes) so
+  // suggestions appear even while quotes are loading or unavailable. Live price
+  // is overlaid when known, otherwise 0 until a quote arrives.
+  const matches = useMemo<StockQuote[]>(() => {
+    if (!q) return [];
+    const liveMap = new Map(stocks.map((s) => [s.symbol, s]));
+    return directory
+      .filter(
+        (e) =>
+          e.symbol.toLowerCase().includes(q) || e.name.toLowerCase().includes(q),
+      )
+      .slice(0, 8)
+      .map(
+        (e) =>
+          liveMap.get(e.symbol) ?? {
+            symbol: e.symbol,
+            name: e.name,
+            price: 0,
+            change: 0,
+            changePercent: 0,
+            volume: "-",
+            high: 0,
+            low: 0,
+            open: 0,
+          },
+      );
+  }, [q, stocks, directory]);
 
   const handleSelect = (stock: StockQuote) => {
     setSelected(stock);
