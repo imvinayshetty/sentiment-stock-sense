@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2, Settings as SettingsIcon, Loader2 } from "lucide-react";
 import {
   Dialog,
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUserSettings, type Holding } from "@/hooks/useUserSettings";
 import { resolveSymbol } from "@/hooks/useAngelOneData";
+import { useAnchoredDropdown } from "@/hooks/useAnchoredDropdown";
 import { getStockDirectory } from "@/lib/stockData";
 
 const SYMBOL_REGEX = /^[A-Z0-9&_\-]{1,20}$/;
@@ -28,6 +29,7 @@ const SettingsDialog = () => {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [openSuggestIdx, setOpenSuggestIdx] = useState<number | null>(null);
+  const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
   const directory = getStockDirectory();
   // Track last-verified symbol per row to skip redundant resolveSymbol calls on blur.
   const [lastVerifiedSymbol, setLastVerifiedSymbol] = useState<Record<number, string>>({});
