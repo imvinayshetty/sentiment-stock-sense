@@ -502,6 +502,7 @@ const DemoTrading = () => {
               <th className="py-2 pr-4 font-medium">Stock</th>
               <th className="py-2 pr-4 font-medium">Current Price</th>
               <th className="py-2 pr-4 font-medium">Quantity</th>
+              <th className="py-2 pr-4 font-medium">Stop Loss</th>
               <th className="py-2 pr-4 font-medium">Buy</th>
               <th className="py-2 font-medium">Sell</th>
             </tr>
@@ -617,6 +618,45 @@ const DemoTrading = () => {
                   disabled={!liveSelected}
                   className="w-20 rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                 />
+              </td>
+
+              {/* Stop loss column */}
+              <td className="py-3 pr-4">
+                <div className="flex w-40 flex-col gap-1.5">
+                  <div className="flex rounded-lg border border-border p-0.5 text-[11px]">
+                    {(["percentage", "price"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setStopLossMethod(m)}
+                        className={`flex-1 rounded-md px-2 py-1 font-medium transition-colors ${
+                          stopLossMethod === m
+                            ? "bg-primary/15 text-primary"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {m === "percentage" ? "By %" : "By ₹"}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="number"
+                    value={stopLossValue}
+                    onChange={(e) => setStopLossValue(e.target.value)}
+                    disabled={!liveSelected}
+                    placeholder={stopLossMethod === "percentage" ? "2 (%)" : "Price"}
+                    className="w-full rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  />
+                  {liveSelected && stopLossValue.trim() !== "" && Number.isFinite(Number(stopLossValue)) && (
+                    <span className="text-[11px] text-muted-foreground">
+                      SL ₹
+                      {(stopLossMethod === "percentage"
+                        ? liveSelected.price * (1 - Math.abs(Number(stopLossValue)) / 100)
+                        : Number(stopLossValue)
+                      ).toFixed(2)}
+                    </span>
+                  )}
+                </div>
               </td>
 
               {/* Buy column */}
