@@ -339,7 +339,8 @@ const SettingsDialog = () => {
                                   No match — you can still type any NSE symbol; it will be verified on save.
                                 </div>
                               )}
-                            </div>
+                            </div>,
+                            document.body,
                           );
                         })()}
                       </div>
