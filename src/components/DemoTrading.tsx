@@ -381,6 +381,28 @@ const DemoTrading = () => {
     });
   };
 
+  // Positions are derived from the ledger — never stored separately (no desync).
+  const holdings = useMemo(() => derivePositions(trades), [trades]);
+  const holdingsList = useMemo(() => Object.values(holdings), [holdings]);
+
+  /** Credit sale proceeds, warning when the demo balance cap truncates them. */
+  const creditProceeds = useCallback(
+    (proceeds: number) => {
+      setBalance((b) => {
+        const next = Math.min(MAX_BALANCE, b + proceeds);
+        const lost = b + proceeds - next;
+        if (lost > 0.005) {
+          toast({
+            title: "Balance capped",
+            description: `₹${lost.toFixed(2)} of the proceeds was not credited — demo balance is capped at ₹${MAX_BALANCE.toLocaleString("en-IN")}.`,
+          });
+        }
+        return next;
+      });
+    },
+    [toast],
+  );
+
   const handleTrade = (side: "BUY" | "SELL") => {
     if (!liveSelected) return;
     const qty = Math.max(1, Math.floor(quantity) || 1);
@@ -456,28 +478,6 @@ const DemoTrading = () => {
         return;
       }
       setBalance((b) => b - total);
-      setHoldings((prev) => {
-        const existing = prev[liveSelected.symbol];
-        const newQty = (existing?.quantity ?? 0) + qty;
-        const newAvg = existing
-          ? (existing.avgPrice * existing.quantity + total) / newQty
-          : liveSelected.price;
-        return {
-          ...prev,
-          [liveSelected.symbol]: {
-            symbol: liveSelected.symbol,
-            name: liveSelected.name,
-            quantity: newQty,
-            avgPrice: newAvg,
-            // A newly supplied stop loss replaces any previous level for the
-            // (now averaged) position; otherwise keep the existing one.
-            stopLossPrice: slPrice ?? existing?.stopLossPrice,
-            stopLossPercent: slPrice != null ? slPercent : existing?.stopLossPercent,
-            targetPrice: tgtPrice ?? existing?.targetPrice,
-            targetPercent: tgtPrice != null ? tgtPercent : existing?.targetPercent,
-          },
-        };
-      });
     } else {
       const existing = holdings[liveSelected.symbol];
       if (!existing || existing.quantity < qty) {
@@ -488,26 +488,18 @@ const DemoTrading = () => {
         });
         return;
       }
-      setBalance((b) => Math.min(MAX_BALANCE, b + total));
-      setHoldings((prev) => {
-        const remaining = existing.quantity - qty;
-        const next = { ...prev };
-        if (remaining <= 0) {
-          delete next[liveSelected.symbol];
-        } else {
-          next[liveSelected.symbol] = { ...existing, quantity: remaining };
-        }
-        return next;
-      });
+      creditProceeds(total);
     }
 
     const trade: Trade = {
       id: crypto.randomUUID(),
       symbol: liveSelected.symbol,
+      name: liveSelected.name,
       side,
       price: liveSelected.price,
       quantity: qty,
       total,
+      at: new Date().toISOString(),
       stopLossPrice: side === "BUY" ? slPrice : undefined,
       targetPrice: side === "BUY" ? tgtPrice : undefined,
       exitReason: side === "SELL" ? "manual" : undefined,
@@ -517,7 +509,7 @@ const DemoTrading = () => {
         second: "2-digit",
       }),
     };
-    setTrades((prev) => [trade, ...prev].slice(0, 50));
+    setTrades((prev) => [trade, ...prev].slice(0, MAX_TRADES));
     if (side === "BUY") {
       setStopLossValue("");
       setTargetValue("");
@@ -530,46 +522,43 @@ const DemoTrading = () => {
     });
   };
 
-  const holdingsList = useMemo(() => Object.values(holdings), [holdings]);
-
   // Auto-exit a position when live price breaches its stop loss or target.
   const handleAutoExit = useCallback(
     (symbol: string, exitPrice: number, reason: ExitReason) => {
-      setHoldings((prev) => {
-        const pos = prev[symbol];
-        if (!pos) return prev;
-        const proceeds = exitPrice * pos.quantity;
-        setBalance((b) => Math.min(MAX_BALANCE, b + proceeds));
-        setTrades((t) =>
-          [
-            {
-              id: crypto.randomUUID(),
-              symbol,
-              side: "SELL" as const,
-              price: exitPrice,
-              quantity: pos.quantity,
-              total: proceeds,
-              exitReason: reason,
-              time: new Date().toLocaleTimeString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              }),
-            },
-            ...t,
-          ].slice(0, 50),
-        );
-        toast({
-          title: reason === "target_reached" ? "Target reached" : "Stop loss triggered",
-          description: `${symbol}: sold ${pos.quantity} @ ₹${exitPrice.toFixed(2)}`,
-          variant: reason === "target_reached" ? "default" : "destructive",
-        });
-        const next = { ...prev };
-        delete next[symbol];
-        return next;
+      // Read the position from the latest ledger (no stale closure), then close
+      // the ENTIRE position in one SELL row.
+      const pos = derivePositions(tradesRef.current)[symbol];
+      if (!pos) return;
+      const proceeds = exitPrice * pos.quantity;
+      creditProceeds(proceeds);
+      setTrades((t) =>
+        [
+          {
+            id: crypto.randomUUID(),
+            symbol,
+            name: pos.name,
+            side: "SELL" as const,
+            price: exitPrice,
+            quantity: pos.quantity,
+            total: proceeds,
+            at: new Date().toISOString(),
+            exitReason: reason,
+            time: new Date().toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          },
+          ...t,
+        ].slice(0, MAX_TRADES),
+      );
+      toast({
+        title: reason === "target_reached" ? "Target reached" : "Stop loss triggered",
+        description: `${pos.symbol}: sold ${pos.quantity} @ ₹${exitPrice.toFixed(2)}`,
+        variant: reason === "target_reached" ? "default" : "destructive",
       });
     },
-    [toast],
+    [toast, creditProceeds],
   );
 
   // Only auto-exit while the market is open — closed-market last prices should
