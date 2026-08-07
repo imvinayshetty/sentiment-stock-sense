@@ -94,6 +94,37 @@ function derivePositions(trades: Trade[]): Record<string, DemoHolding> {
   }
   return out;
 }
+
+/**
+ * Legacy states stored `holdings` separately. If a saved position is not
+ * reproducible from the ledger, synthesize an opening BUY row so the derived
+ * view keeps it (and its exit levels).
+ */
+function migrateLedger(
+  trades: Trade[],
+  legacy?: Record<string, DemoHolding>,
+): Trade[] {
+  if (!legacy) return trades;
+  const derived = derivePositions(trades);
+  const synthetic: Trade[] = [];
+  Object.values(legacy).forEach((h) => {
+    if (derived[h.symbol] || !(h.quantity > 0)) return;
+    synthetic.push({
+      id: crypto.randomUUID(),
+      symbol: h.symbol,
+      name: h.name,
+      side: "BUY",
+      price: h.avgPrice,
+      quantity: h.quantity,
+      total: h.avgPrice * h.quantity,
+      stopLossPrice: h.stopLossPrice,
+      targetPrice: h.targetPrice,
+      time: "—",
+    });
+  });
+  // Synthetic openings are the oldest entries in the ledger.
+  return [...trades, ...synthetic];
+}
 const STORAGE_KEY = "demo-trading-state";
 const SESSION_KEY = "demo-session-id";
 
