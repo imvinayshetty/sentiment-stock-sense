@@ -179,7 +179,9 @@ const DemoTrading = () => {
     top: number;
     width: number;
   } | null>(null);
-  const [trades, setTrades] = useState<Trade[]>(() => loadState("trades", []));
+  const [trades, setTrades] = useState<Trade[]>(() =>
+    migrateLedger(loadState<Trade[]>("trades", []), loadState("holdings", undefined)),
+  );
   const [quantity, setQuantity] = useState(1);
   const [stopLossMethod, setStopLossMethod] = useState<"percentage" | "price">("percentage");
   const [stopLossValue, setStopLossValue] = useState<string>("");
@@ -232,12 +234,11 @@ const DemoTrading = () => {
         .then(({ error }) => { if (error) console.error("Demo portfolio save failed:", error); });
     }, 600);
     return () => clearTimeout(t);
-  }, [trades, balance, holdings]);
+  }, [trades, balance]);
 
   const handleReset = async () => {
     setTrades([]);
     setBalance(0);
-    setHoldings({});
     setSelected(null);
     setQuantity(1);
     setTopUp("");
