@@ -253,15 +253,37 @@ const SettingsDialog = () => {
                 {rows.map((row, i) => (
                   <div key={`${row.symbol || "empty"}-${i}`} className="space-y-1">
                     <div className="grid grid-cols-[1fr_4rem_5rem_2rem] gap-2 sm:grid-cols-[1fr_5rem_6rem_2rem]">
-                      <div className="relative">
+                      <div className="relative" ref={openSuggestIdx === i ? suggestAnchorRef : undefined}>
                         <Input
                           value={row.symbol}
-                          onChange={(e) => updateRow(i, { symbol: e.target.value.toUpperCase() })}
+                          autoComplete="off"
+                          role="combobox"
+                          aria-expanded={openSuggestIdx === i}
+                          onChange={(e) => {
+                            updateRow(i, { symbol: e.target.value.toUpperCase() });
+                            setOpenSuggestIdx(i);
+                            setActiveSuggestIdx(0);
+                          }}
                           onFocus={() => setOpenSuggestIdx(i)}
+                          onKeyDown={(e) => {
+                            const list = getSuggestions(row.symbol);
+                            if (openSuggestIdx !== i || list.length === 0) return;
+                            if (e.key === "ArrowDown") {
+                              e.preventDefault();
+                              setActiveSuggestIdx((n) => (n + 1) % list.length);
+                            } else if (e.key === "ArrowUp") {
+                              e.preventDefault();
+                              setActiveSuggestIdx((n) => (n - 1 + list.length) % list.length);
+                            } else if (e.key === "Enter") {
+                              e.preventDefault();
+                              const pick = list[activeSuggestIdx] ?? list[0];
+                              updateRow(i, { symbol: pick.symbol });
+                              setOpenSuggestIdx(null);
+                              verifyRow(i, pick.symbol);
+                            }
+                          }}
                           onBlur={(e) => {
                             const v = e.target.value.trim();
-                            // Delay so click on a suggestion registers first.
-                            setTimeout(() => setOpenSuggestIdx((cur) => (cur === i ? null : cur)), 150);
                             const upper = v.toUpperCase();
                             if (v && !rowStatus[i]?.verified && lastVerifiedSymbol[i] !== upper) {
                               verifyRow(i, v);
@@ -269,34 +291,51 @@ const SettingsDialog = () => {
                           }}
                           placeholder="e.g. RELIANCE"
                           maxLength={20}
-                          className={`font-mono uppercase ${rowStatus[i]?.error ? "border-chart-down" : ""}`}
+                          className={`font-mono uppercase pr-8 ${rowStatus[i]?.error ? "border-chart-down" : ""}`}
                         />
                         {rowStatus[i]?.loading && (
                           <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
                         )}
-                        {openSuggestIdx === i && row.symbol.trim() !== "" && (() => {
+                        {openSuggestIdx === i && suggestPos && row.symbol.trim() !== "" && (() => {
                           const suggestions = getSuggestions(row.symbol);
                           return (
-                            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+                            <div
+                              ref={suggestPanelRef}
+                              role="listbox"
+                              className="fixed z-50 overflow-y-auto overscroll-contain rounded-md border border-border bg-popover shadow-lg"
+                              style={{
+                                left: suggestPos.left,
+                                top: suggestPos.top,
+                                width: suggestPos.width,
+                                maxHeight: suggestPos.maxHeight,
+                              }}
+                            >
                               {suggestions.length > 0 ? (
-                                suggestions.map((s) => (
+                                suggestions.map((s, n) => (
                                   <button
                                     key={s.symbol}
                                     type="button"
+                                    role="option"
+                                    aria-selected={n === activeSuggestIdx}
+                                    onMouseEnter={() => setActiveSuggestIdx(n)}
                                     onPointerDown={(e) => e.preventDefault()}
                                     onClick={() => {
                                       updateRow(i, { symbol: s.symbol });
                                       setOpenSuggestIdx(null);
                                       verifyRow(i, s.symbol);
                                     }}
-                                    className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent"
+                                    className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs ${
+                                      n === activeSuggestIdx ? "bg-accent" : ""
+                                    } hover:bg-accent`}
                                   >
-                                    <span className="font-mono font-semibold text-foreground">{s.symbol}</span>
-                                    <span className="truncate text-muted-foreground">{s.name}</span>
+                                    <span className="shrink-0 font-mono font-semibold text-foreground">{s.symbol}</span>
+                                    <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">{s.name}</span>
                                   </button>
                                 ))
                               ) : (
-                                <div className="px-3 py-2 text-xs text-muted-foreground">No match</div>
+                                <div className="px-3 py-2 text-xs text-muted-foreground">
+                                  No match — you can still type any NSE symbol; it will be verified on save.
+                                </div>
                               )}
                             </div>
                           );
