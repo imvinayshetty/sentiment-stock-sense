@@ -796,6 +796,16 @@ const DemoTrading = () => {
                 <span className="font-mono font-semibold text-foreground">
                   = ₹{t.total.toFixed(2)}
                 </span>
+                {t.exitReason === "stop_loss" && (
+                  <span className="rounded bg-chart-down/15 px-1.5 py-0.5 font-semibold text-chart-down">
+                    SL hit
+                  </span>
+                )}
+                {t.side === "BUY" && t.stopLossPrice != null && (
+                  <span className="font-mono text-muted-foreground">
+                    SL ₹{t.stopLossPrice.toFixed(2)}
+                  </span>
+                )}
                 <span className="ml-auto font-mono text-muted-foreground">
                   {t.time}
                 </span>
