@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   ArrowDownCircle,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
 import { useAutoExitMonitoring, type ExitReason } from "@/hooks/useAutoExitMonitoring";
+import { useAnchoredDropdown } from "@/hooks/useAnchoredDropdown";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -159,16 +161,12 @@ function getSessionId(): string {
 const DemoTrading = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<StockQuote | null>(null);
-  const searchRef = useRef<HTMLDivElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
   const [resolveState, setResolveState] = useState<{ loading: boolean; error: string | null }>({
     loading: false,
     error: null,
   });
-  const [dropdownPos, setDropdownPos] = useState<{
-    left: number;
-    top: number;
-    width: number;
-  } | null>(null);
   const [trades, setTrades] = useState<Trade[]>(() =>
     migrateLedger(loadState<Trade[]>("trades", []), loadState("holdings", undefined)),
   );
@@ -305,6 +303,7 @@ const DemoTrading = () => {
   const handleSelect = (stock: StockQuote) => {
     setSelected(stock);
     setQuery("");
+    setSearchOpen(false);
   };
 
   const symbolCandidate = query.trim().toUpperCase();
@@ -328,6 +327,7 @@ const DemoTrading = () => {
         exchange: r.exchange,
       });
       setQuery("");
+      setSearchOpen(false);
       setResolveState({ loading: false, error: null });
     } catch (e) {
       setResolveState({ loading: false, error: (e as Error).message });
@@ -337,33 +337,33 @@ const DemoTrading = () => {
   // Clear any resolve error when the query changes.
   useEffect(() => {
     setResolveState((s) => (s.error ? { loading: s.loading, error: null } : s));
+    setActiveIdx(0);
   }, [q]);
 
-  // Position the search dropdown with fixed coordinates so it is not clipped
-  // by the table's horizontal-scroll (overflow) container.
-  useLayoutEffect(() => {
-    if (!query) {
-      setDropdownPos(null);
-      return;
+  // Dropdown is positioned in viewport coordinates so it is never clipped by
+  // the table's horizontal-scroll container, and flips up near the viewport
+  // bottom.
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+  const dropdownVisible = searchOpen && !!q;
+  const { anchorRef: searchRef, panelRef, pos: dropdownPos } = useAnchoredDropdown(
+    dropdownVisible,
+    closeSearch,
+  );
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!dropdownVisible || matches.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => (i + 1) % matches.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => (i - 1 + matches.length) % matches.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const pick = matches[activeIdx] ?? matches[0];
+      if (pick) handleSelect(pick);
     }
-    const update = () => {
-      const el = searchRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      setDropdownPos({
-        left: rect.left,
-        top: rect.bottom + 4,
-        width: rect.width,
-      });
-    };
-    update();
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
-  }, [query]);
+  };
 
   const handleTopUp = () => {
     const amount = Number(topUp);
@@ -641,20 +641,33 @@ const DemoTrading = () => {
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="text"
+                    role="combobox"
+                    aria-expanded={dropdownVisible}
+                    aria-controls="demo-stock-suggestions"
+                    autoComplete="off"
                     placeholder={
                       liveSelected ? liveSelected.symbol : "Search stock..."
                     }
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setSearchOpen(true);
+                    }}
+                    onFocus={() => setSearchOpen(true)}
+                    onKeyDown={handleSearchKeyDown}
                     className="w-full rounded-lg border border-border bg-secondary/50 py-2 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
-                  {q && dropdownPos && (
+                  {dropdownVisible && dropdownPos && createPortal(
                     <div
-                      className="fixed z-50 max-h-60 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg"
+                      id="demo-stock-suggestions"
+                      ref={panelRef}
+                      role="listbox"
+                      className="fixed z-50 overflow-y-auto overscroll-contain rounded-lg border border-border bg-popover shadow-lg"
                       style={{
                         left: dropdownPos.left,
                         top: dropdownPos.top,
                         width: dropdownPos.width,
+                        maxHeight: dropdownPos.maxHeight,
                       }}
                     >
                       {matches.length === 0 && (
@@ -682,26 +695,33 @@ const DemoTrading = () => {
                           )}
                         </div>
                       )}
-                      {matches.map((s) => (
+                      {matches.map((s, idx) => (
                         <button
                           key={s.symbol}
+                          type="button"
+                          role="option"
+                          aria-selected={idx === activeIdx}
+                          onMouseEnter={() => setActiveIdx(idx)}
+                          onPointerDown={(e) => e.preventDefault()}
                           onClick={() => handleSelect(s)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-accent"
+                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left ${
+                            idx === activeIdx ? "bg-secondary" : ""} hover:bg-secondary`}
                         >
-                          <span>
+                          <span className="flex min-w-0 flex-1 flex-col">
                             <span className="font-mono text-sm font-bold text-foreground">
                               {s.symbol}
                             </span>
-                            <span className="ml-2 truncate text-xs text-muted-foreground">
+                            <span className="truncate text-xs text-muted-foreground">
                               {s.name}
                             </span>
                           </span>
-                          <span className="font-mono text-xs text-foreground">
-                            ₹{s.price.toFixed(2)}
+                          <span className="shrink-0 font-mono text-xs text-foreground">
+                            {s.price > 0 ? `₹${s.price.toFixed(2)}` : "—"}
                           </span>
                         </button>
                       ))}
-                    </div>
+                    </div>,
+                    document.body,
                   )}
                 </div>
                 {liveSelected && (
