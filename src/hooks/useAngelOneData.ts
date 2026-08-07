@@ -73,8 +73,11 @@ export function useStockQuotes() {
         source: result.source ?? "live",
       };
     },
-    refetchInterval: 45000,
-    staleTime: 30000,
+    // Poll faster while the market is open so auto-exit (stop loss / target)
+    // rules fire close to real time; back off when closed.
+    refetchInterval: (query) =>
+      query.state.data?.marketStatus === "OPEN" ? 15000 : 120000,
+    staleTime: 10000,
     retry: 1,
   });
 }
