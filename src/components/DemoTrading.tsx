@@ -640,20 +640,33 @@ const DemoTrading = () => {
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="text"
+                    role="combobox"
+                    aria-expanded={dropdownVisible}
+                    aria-controls="demo-stock-suggestions"
+                    autoComplete="off"
                     placeholder={
                       liveSelected ? liveSelected.symbol : "Search stock..."
                     }
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setSearchOpen(true);
+                    }}
+                    onFocus={() => setSearchOpen(true)}
+                    onKeyDown={handleSearchKeyDown}
                     className="w-full rounded-lg border border-border bg-secondary/50 py-2 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
-                  {q && dropdownPos && (
+                  {dropdownVisible && dropdownPos && (
                     <div
-                      className="fixed z-50 max-h-60 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg"
+                      id="demo-stock-suggestions"
+                      ref={panelRef}
+                      role="listbox"
+                      className="fixed z-50 overflow-y-auto overscroll-contain rounded-lg border border-border bg-popover shadow-lg"
                       style={{
                         left: dropdownPos.left,
                         top: dropdownPos.top,
                         width: dropdownPos.width,
+                        maxHeight: dropdownPos.maxHeight,
                       }}
                     >
                       {matches.length === 0 && (
@@ -681,22 +694,29 @@ const DemoTrading = () => {
                           )}
                         </div>
                       )}
-                      {matches.map((s) => (
+                      {matches.map((s, idx) => (
                         <button
                           key={s.symbol}
+                          type="button"
+                          role="option"
+                          aria-selected={idx === activeIdx}
+                          onMouseEnter={() => setActiveIdx(idx)}
+                          onPointerDown={(e) => e.preventDefault()}
                           onClick={() => handleSelect(s)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-accent"
+                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left ${
+                            idx === activeIdx ? "bg-accent" : ""
+                          } hover:bg-accent`}
                         >
-                          <span>
+                          <span className="flex min-w-0 flex-1 flex-col">
                             <span className="font-mono text-sm font-bold text-foreground">
                               {s.symbol}
                             </span>
-                            <span className="ml-2 truncate text-xs text-muted-foreground">
+                            <span className="truncate text-xs text-muted-foreground">
                               {s.name}
                             </span>
                           </span>
-                          <span className="font-mono text-xs text-foreground">
-                            ₹{s.price.toFixed(2)}
+                          <span className="shrink-0 font-mono text-xs text-foreground">
+                            {s.price > 0 ? `₹${s.price.toFixed(2)}` : "—"}
                           </span>
                         </button>
                       ))}
