@@ -619,6 +619,17 @@ const DemoTrading = () => {
         </p>
       </div>
 
+      {quotes?.source === "last-close" && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-chart-down/40 bg-chart-down/10 p-3 text-xs text-chart-down">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Prices shown are the last closing values, not live quotes
+            {quotes?.marketStatus !== "OPEN" ? " (market closed)" : ""}. Orders
+            execute at these stale prices and auto-exit rules stay paused.
+          </span>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
