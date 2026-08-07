@@ -701,7 +701,8 @@ const DemoTrading = () => {
                   <th className="py-2 pr-4 font-medium">Qty</th>
                   <th className="py-2 pr-4 font-medium">Purchased Value</th>
                   <th className="py-2 pr-4 font-medium">Current Value</th>
-                  <th className="py-2 font-medium">P/L</th>
+                  <th className="py-2 pr-4 font-medium">P/L</th>
+                  <th className="py-2 font-medium">Stop Loss</th>
                 </tr>
               </thead>
               <tbody>
@@ -712,6 +713,11 @@ const DemoTrading = () => {
                   const pl = current - purchased;
                   const plPct = purchased > 0 ? (pl / purchased) * 100 : 0;
                   const up = pl >= 0;
+                  const slDistancePct =
+                    h.stopLossPrice != null && livePrice > 0
+                      ? ((livePrice - h.stopLossPrice) / livePrice) * 100
+                      : null;
+                  const slNear = slDistancePct != null && slDistancePct < 1;
                   return (
                     <tr key={h.symbol} className="border-b border-border">
                       <td className="py-2 pr-4">
@@ -733,13 +739,26 @@ const DemoTrading = () => {
                         ₹{current.toFixed(2)}
                       </td>
                       <td
-                        className={`py-2 font-mono ${
+                        className={`py-2 pr-4 font-mono ${
                           up ? "text-chart-up" : "text-chart-down"
                         }`}
                       >
                         {up ? "+" : ""}
                         ₹{pl.toFixed(2)} ({up ? "+" : ""}
                         {plPct.toFixed(2)}%)
+                      </td>
+                      <td className="py-2 font-mono text-xs">
+                        {h.stopLossPrice != null ? (
+                          <div className={slNear ? "text-chart-down" : "text-muted-foreground"}>
+                            <div className="flex items-center gap-1 font-semibold">
+                              {slNear && <ShieldAlert className="h-3.5 w-3.5" />}
+                              SL ₹{h.stopLossPrice.toFixed(2)}
+                            </div>
+                            <div>{slDistancePct!.toFixed(2)}% away</div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                     </tr>
                   );
