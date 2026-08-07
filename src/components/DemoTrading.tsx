@@ -193,6 +193,11 @@ const DemoTrading = () => {
 
   const sessionId = useRef(getSessionId());
   const remoteLoaded = useRef(false);
+  // Latest ledger for callbacks that must not close over a stale array.
+  const tradesRef = useRef(trades);
+  useEffect(() => {
+    tradesRef.current = trades;
+  }, [trades]);
 
   // Load the saved portfolio from the backend (primary), falling back to the
   // localStorage copy that already seeded the initial state.
