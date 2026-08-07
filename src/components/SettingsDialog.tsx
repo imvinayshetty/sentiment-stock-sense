@@ -335,8 +335,8 @@ const SettingsDialog = () => {
                                       verifyRow(i, s.symbol);
                                     }}
                                     className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs ${
-                                      n === activeSuggestIdx ? "bg-accent" : ""
-                                    } hover:bg-accent`}
+                                      n === activeSuggestIdx ? "bg-secondary" : ""
+                                    } hover:bg-secondary`}
                                   >
                                     <span className="shrink-0 font-mono font-semibold text-foreground">{s.symbol}</span>
                                     <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">{s.name}</span>
