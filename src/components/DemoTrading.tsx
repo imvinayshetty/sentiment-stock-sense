@@ -298,6 +298,32 @@ const DemoTrading = () => {
     if (!liveSelected) return;
     const qty = Math.max(1, Math.floor(quantity) || 1);
     const total = liveSelected.price * qty;
+    let slPrice: number | undefined;
+    let slPercent: number | undefined;
+
+    if (side === "BUY" && stopLossValue.trim() !== "") {
+      const v = Number(stopLossValue);
+      if (!Number.isFinite(v)) {
+        toast({ title: "Invalid stop loss", description: "Enter a number.", variant: "destructive" });
+        return;
+      }
+      if (stopLossMethod === "percentage") {
+        const pct = -Math.abs(v);
+        slPercent = pct;
+        slPrice = liveSelected.price * (1 + pct / 100);
+      } else {
+        slPrice = v;
+        slPercent = ((v - liveSelected.price) / liveSelected.price) * 100;
+      }
+      if (!(slPrice > 0) || slPrice >= liveSelected.price) {
+        toast({
+          title: "Invalid stop loss",
+          description: `Stop loss must be above 0 and below ₹${liveSelected.price.toFixed(2)}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
     if (side === "BUY") {
       if (total > balance) {
@@ -322,6 +348,10 @@ const DemoTrading = () => {
             name: liveSelected.name,
             quantity: newQty,
             avgPrice: newAvg,
+            // A newly supplied stop loss replaces any previous level for the
+            // (now averaged) position; otherwise keep the existing one.
+            stopLossPrice: slPrice ?? existing?.stopLossPrice,
+            stopLossPercent: slPrice != null ? slPercent : existing?.stopLossPercent,
           },
         };
       });
@@ -355,6 +385,8 @@ const DemoTrading = () => {
       price: liveSelected.price,
       quantity: qty,
       total,
+      stopLossPrice: side === "BUY" ? slPrice : undefined,
+      exitReason: side === "SELL" ? "manual" : undefined,
       time: new Date().toLocaleTimeString("en-IN", {
         hour: "2-digit",
         minute: "2-digit",
@@ -362,13 +394,58 @@ const DemoTrading = () => {
       }),
     };
     setTrades((prev) => [trade, ...prev].slice(0, 50));
+    if (side === "BUY") setStopLossValue("");
     toast({
       title: `${side} order placed (demo)`,
-      description: `${qty} × ${liveSelected.symbol} @ ₹${liveSelected.price.toFixed(2)} = ₹${total.toFixed(2)}`,
+      description: `${qty} × ${liveSelected.symbol} @ ₹${liveSelected.price.toFixed(2)} = ₹${total.toFixed(2)}${
+        slPrice != null ? ` · SL ₹${slPrice.toFixed(2)}` : ""
+      }`,
     });
   };
 
-  const holdingsList = Object.values(holdings);
+  const holdingsList = useMemo(() => Object.values(holdings), [holdings]);
+
+  // Auto-exit a position when live price breaches its stop loss.
+  const handleStopLossHit = useCallback(
+    (symbol: string, exitPrice: number) => {
+      setHoldings((prev) => {
+        const pos = prev[symbol];
+        if (!pos) return prev;
+        const proceeds = exitPrice * pos.quantity;
+        setBalance((b) => Math.min(MAX_BALANCE, b + proceeds));
+        setTrades((t) =>
+          [
+            {
+              id: crypto.randomUUID(),
+              symbol,
+              side: "SELL" as const,
+              price: exitPrice,
+              quantity: pos.quantity,
+              total: proceeds,
+              exitReason: "stop_loss" as const,
+              time: new Date().toLocaleTimeString("en-IN", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              }),
+            },
+            ...t,
+          ].slice(0, 50),
+        );
+        toast({
+          title: "Stop loss triggered",
+          description: `${symbol}: sold ${pos.quantity} @ ₹${exitPrice.toFixed(2)}`,
+          variant: "destructive",
+        });
+        const next = { ...prev };
+        delete next[symbol];
+        return next;
+      });
+    },
+    [toast],
+  );
+
+  useStopLossMonitoring(holdingsList, priceMap, handleStopLossHit);
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
