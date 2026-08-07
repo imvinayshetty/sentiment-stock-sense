@@ -782,7 +782,8 @@ const DemoTrading = () => {
                   <th className="py-2 pr-4 font-medium">Purchased Value</th>
                   <th className="py-2 pr-4 font-medium">Current Value</th>
                   <th className="py-2 pr-4 font-medium">P/L</th>
-                  <th className="py-2 font-medium">Stop Loss</th>
+                  <th className="py-2 pr-4 font-medium">Stop Loss</th>
+                  <th className="py-2 font-medium">Target</th>
                 </tr>
               </thead>
               <tbody>
@@ -798,6 +799,11 @@ const DemoTrading = () => {
                       ? ((livePrice - h.stopLossPrice) / livePrice) * 100
                       : null;
                   const slNear = slDistancePct != null && slDistancePct < 1;
+                  const tgtDistancePct =
+                    h.targetPrice != null && livePrice > 0
+                      ? ((h.targetPrice - livePrice) / livePrice) * 100
+                      : null;
+                  const tgtNear = tgtDistancePct != null && tgtDistancePct < 1;
                   return (
                     <tr key={h.symbol} className="border-b border-border">
                       <td className="py-2 pr-4">
@@ -827,7 +833,7 @@ const DemoTrading = () => {
                         ₹{pl.toFixed(2)} ({up ? "+" : ""}
                         {plPct.toFixed(2)}%)
                       </td>
-                      <td className="py-2 font-mono text-xs">
+                      <td className="py-2 pr-4 font-mono text-xs">
                         {h.stopLossPrice != null ? (
                           <div className={slNear ? "text-chart-down" : "text-muted-foreground"}>
                             <div className="flex items-center gap-1 font-semibold">
@@ -835,6 +841,19 @@ const DemoTrading = () => {
                               SL ₹{h.stopLossPrice.toFixed(2)}
                             </div>
                             <div>{slDistancePct!.toFixed(2)}% away</div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 font-mono text-xs">
+                        {h.targetPrice != null ? (
+                          <div className={tgtNear ? "text-chart-up" : "text-muted-foreground"}>
+                            <div className="flex items-center gap-1 font-semibold">
+                              {tgtNear && <Target className="h-3.5 w-3.5" />}
+                              ₹{h.targetPrice.toFixed(2)}
+                            </div>
+                            <div>{tgtDistancePct!.toFixed(2)}% away</div>
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -881,9 +900,19 @@ const DemoTrading = () => {
                     SL hit
                   </span>
                 )}
+                {t.exitReason === "target_reached" && (
+                  <span className="rounded bg-chart-up/15 px-1.5 py-0.5 font-semibold text-chart-up">
+                    Target hit
+                  </span>
+                )}
                 {t.side === "BUY" && t.stopLossPrice != null && (
                   <span className="font-mono text-muted-foreground">
                     SL ₹{t.stopLossPrice.toFixed(2)}
+                  </span>
+                )}
+                {t.side === "BUY" && t.targetPrice != null && (
+                  <span className="font-mono text-muted-foreground">
+                    Tgt ₹{t.targetPrice.toFixed(2)}
                   </span>
                 )}
                 <span className="ml-auto font-mono text-muted-foreground">
