@@ -155,9 +155,6 @@ const DemoTrading = () => {
   const [targetValue, setTargetValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
   const [topUp, setTopUp] = useState("");
-  const [holdings, setHoldings] = useState<Record<string, Holding>>(() =>
-    loadState("holdings", {}),
-  );
   const { data: quotes, isLoading } = useStockQuotes();
   const { toast } = useToast();
 
@@ -172,11 +169,14 @@ const DemoTrading = () => {
       try {
         const { data } = await supabase
           .from("demo_state").select("state").eq("session_id", sessionId.current).maybeSingle();
-        const s = data?.state as { trades?: Trade[]; balance?: number; holdings?: Record<string, Holding> } | null;
+        const s = data?.state as {
+          trades?: Trade[];
+          balance?: number;
+          holdings?: Record<string, DemoHolding>;
+        } | null;
         if (!cancelled && s) {
-          if (Array.isArray(s.trades)) setTrades(s.trades);
+          if (Array.isArray(s.trades)) setTrades(migrateLedger(s.trades, s.holdings));
           if (typeof s.balance === "number") setBalance(s.balance);
-          if (s.holdings) setHoldings(s.holdings);
         }
       } catch (e) {
         console.error("Demo portfolio load failed, using local cache:", e);
@@ -189,7 +189,7 @@ const DemoTrading = () => {
 
   // Persist to localStorage (fast cache) + backend (debounced, after remote load).
   useEffect(() => {
-    const payload = { trades, balance, holdings };
+    const payload = { trades, balance };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch { /* ignore quota / disabled storage */ }
