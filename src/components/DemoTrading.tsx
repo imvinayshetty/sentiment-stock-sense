@@ -393,6 +393,8 @@ const DemoTrading = () => {
             // (now averaged) position; otherwise keep the existing one.
             stopLossPrice: slPrice ?? existing?.stopLossPrice,
             stopLossPercent: slPrice != null ? slPercent : existing?.stopLossPercent,
+            targetPrice: tgtPrice ?? existing?.targetPrice,
+            targetPercent: tgtPrice != null ? tgtPercent : existing?.targetPercent,
           },
         };
       });
@@ -427,6 +429,7 @@ const DemoTrading = () => {
       quantity: qty,
       total,
       stopLossPrice: side === "BUY" ? slPrice : undefined,
+      targetPrice: side === "BUY" ? tgtPrice : undefined,
       exitReason: side === "SELL" ? "manual" : undefined,
       time: new Date().toLocaleTimeString("en-IN", {
         hour: "2-digit",
@@ -435,20 +438,23 @@ const DemoTrading = () => {
       }),
     };
     setTrades((prev) => [trade, ...prev].slice(0, 50));
-    if (side === "BUY") setStopLossValue("");
+    if (side === "BUY") {
+      setStopLossValue("");
+      setTargetValue("");
+    }
     toast({
       title: `${side} order placed (demo)`,
       description: `${qty} × ${liveSelected.symbol} @ ₹${liveSelected.price.toFixed(2)} = ₹${total.toFixed(2)}${
         slPrice != null ? ` · SL ₹${slPrice.toFixed(2)}` : ""
-      }`,
+      }${tgtPrice != null ? ` · Target ₹${tgtPrice.toFixed(2)}` : ""}`,
     });
   };
 
   const holdingsList = useMemo(() => Object.values(holdings), [holdings]);
 
-  // Auto-exit a position when live price breaches its stop loss.
-  const handleStopLossHit = useCallback(
-    (symbol: string, exitPrice: number) => {
+  // Auto-exit a position when live price breaches its stop loss or target.
+  const handleAutoExit = useCallback(
+    (symbol: string, exitPrice: number, reason: ExitReason) => {
       setHoldings((prev) => {
         const pos = prev[symbol];
         if (!pos) return prev;
@@ -463,7 +469,7 @@ const DemoTrading = () => {
               price: exitPrice,
               quantity: pos.quantity,
               total: proceeds,
-              exitReason: "stop_loss" as const,
+              exitReason: reason,
               time: new Date().toLocaleTimeString("en-IN", {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -474,9 +480,9 @@ const DemoTrading = () => {
           ].slice(0, 50),
         );
         toast({
-          title: "Stop loss triggered",
+          title: reason === "target_reached" ? "Target reached" : "Stop loss triggered",
           description: `${symbol}: sold ${pos.quantity} @ ₹${exitPrice.toFixed(2)}`,
-          variant: "destructive",
+          variant: reason === "target_reached" ? "default" : "destructive",
         });
         const next = { ...prev };
         delete next[symbol];
@@ -486,7 +492,10 @@ const DemoTrading = () => {
     [toast],
   );
 
-  useStopLossMonitoring(holdingsList, priceMap, handleStopLossHit);
+  // Only auto-exit while the market is open — closed-market last prices should
+  // not trigger fills.
+  const monitored = quotes?.marketStatus === "OPEN" ? holdingsList : EMPTY_POSITIONS;
+  useAutoExitMonitoring(monitored, priceMap, handleAutoExit);
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
