@@ -70,6 +70,22 @@ const SettingsDialog = () => {
       .slice(0, 8);
   };
 
+  // Viewport-anchored dropdown for the row currently being edited, so the list
+  // is never clipped by the dialog's own vertical scroll container.
+  const closeSuggest = useCallback(() => setOpenSuggestIdx(null), []);
+  const {
+    anchorRef: suggestAnchorRef,
+    panelRef: suggestPanelRef,
+    pos: suggestPos,
+    reposition,
+  } = useAnchoredDropdown(openSuggestIdx !== null, closeSuggest);
+
+  // Re-measure when the active row changes (the anchor element changes with it).
+  useEffect(() => {
+    if (openSuggestIdx !== null) reposition();
+    setActiveSuggestIdx(0);
+  }, [openSuggestIdx, reposition]);
+
   const removeRow = (idx: number) => {
     setRows((r) => r.filter((_, i) => i !== idx));
     setRowStatus((s) => {
