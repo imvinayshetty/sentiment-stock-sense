@@ -201,7 +201,15 @@ const SettingsDialog = () => {
           Portfolio
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-2xl max-h-[85vh] overflow-y-auto"
+        onInteractOutside={(e) => {
+          // The symbol suggestion list is portaled to <body>; clicks in it must
+          // not be treated as "outside" and close the dialog.
+          const t = e.target as Element | null;
+          if (t?.closest?.("[data-symbol-suggest]")) e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Portfolio & Budget</DialogTitle>
           <DialogDescription>
