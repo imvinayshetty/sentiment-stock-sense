@@ -6,8 +6,9 @@ import {
   Wallet,
   PlusCircle,
   RotateCcw,
+  Loader2,
 } from "lucide-react";
-import { useStockQuotes } from "@/hooks/useAngelOneData";
+import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -75,6 +76,10 @@ const DemoTrading = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<StockQuote | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+  const [resolveState, setResolveState] = useState<{ loading: boolean; error: string | null }>({
+    loading: false,
+    error: null,
+  });
   const [dropdownPos, setDropdownPos] = useState<{
     left: number;
     top: number;
@@ -189,6 +194,38 @@ const DemoTrading = () => {
     setSelected(stock);
     setQuery("");
   };
+
+  const symbolCandidate = query.trim().toUpperCase();
+  const canTryFreeForm =
+    !!q && matches.length === 0 && /^[A-Z0-9&_\-]{1,20}$/.test(symbolCandidate);
+
+  const handleResolveFreeForm = async () => {
+    setResolveState({ loading: true, error: null });
+    try {
+      const r = await resolveSymbol(symbolCandidate);
+      setSelected({
+        symbol: r.symbol,
+        name: r.name,
+        price: r.price,
+        change: 0,
+        changePercent: 0,
+        volume: "-",
+        high: r.price,
+        low: r.price,
+        open: r.price,
+        exchange: r.exchange,
+      });
+      setQuery("");
+      setResolveState({ loading: false, error: null });
+    } catch (e) {
+      setResolveState({ loading: false, error: (e as Error).message });
+    }
+  };
+
+  // Clear any resolve error when the query changes.
+  useEffect(() => {
+    setResolveState((s) => (s.error ? { loading: s.loading, error: null } : s));
+  }, [q]);
 
   // Position the search dropdown with fixed coordinates so it is not clipped
   // by the table's horizontal-scroll (overflow) container.
@@ -388,9 +425,29 @@ const DemoTrading = () => {
                       }}
                     >
                       {matches.length === 0 && (
-                        <p className="px-3 py-2 text-xs text-muted-foreground">
-                          {isLoading ? "Loading..." : `No match for "${query}"`}
-                        </p>
+                        <div className="px-3 py-2">
+                          <p className="text-xs text-muted-foreground">
+                            {isLoading ? "Loading..." : `No match for "${query}"`}
+                          </p>
+                          {!isLoading && canTryFreeForm && (
+                            <>
+                              <button
+                                onPointerDown={(e) => e.preventDefault()}
+                                onClick={handleResolveFreeForm}
+                                disabled={resolveState.loading}
+                                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                              >
+                                {resolveState.loading && (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                )}
+                                Search live NSE for {symbolCandidate}
+                              </button>
+                              {resolveState.error && (
+                                <p className="mt-1 text-xs text-chart-down">{resolveState.error}</p>
+                              )}
+                            </>
+                          )}
+                        </div>
                       )}
                       {matches.map((s) => (
                         <button
