@@ -46,6 +46,7 @@ interface Holding {
 }
 
 const MAX_BALANCE = 100000;
+const EMPTY_POSITIONS: Holding[] = [];
 const STORAGE_KEY = "demo-trading-state";
 const SESSION_KEY = "demo-session-id";
 
