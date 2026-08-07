@@ -19,11 +19,15 @@ import { supabase } from "@/integrations/supabase/client";
 interface Trade {
   id: string;
   symbol: string;
+  /** Company name captured at execution time (for holdings display). */
+  name?: string;
   side: "BUY" | "SELL";
   price: number;
   quantity: number;
   total: number;
   time: string;
+  /** Execution timestamp (ISO) used to replay the ledger deterministically. */
+  at?: string;
   /** Stop-loss level attached at buy time (BUY rows only). */
   stopLossPrice?: number;
   /** Take-profit level attached at buy time (BUY rows only). */
@@ -32,7 +36,9 @@ interface Trade {
   exitReason?: "manual" | ExitReason;
 }
 
-interface Holding {
+/** Position derived from the trade ledger. Named to avoid colliding with the
+ *  user-settings `Holding` type, which has a different shape. */
+interface DemoHolding {
   symbol: string;
   name: string;
   quantity: number;
@@ -46,7 +52,48 @@ interface Holding {
 }
 
 const MAX_BALANCE = 100000;
-const EMPTY_POSITIONS: Holding[] = [];
+const EMPTY_POSITIONS: DemoHolding[] = [];
+/** Keep a generous ledger so derived holdings never lose their cost basis. */
+const MAX_TRADES = 500;
+
+/**
+ * Single source of truth: replay the trade ledger (oldest → newest) into
+ * positions, so holdings can never desync from order history.
+ */
+function derivePositions(trades: Trade[]): Record<string, DemoHolding> {
+  const out: Record<string, DemoHolding> = {};
+  for (let i = trades.length - 1; i >= 0; i--) {
+    const t = trades[i];
+    const pos = out[t.symbol];
+    if (t.side === "BUY") {
+      const qty = (pos?.quantity ?? 0) + t.quantity;
+      const cost = (pos ? pos.avgPrice * pos.quantity : 0) + t.total;
+      out[t.symbol] = {
+        symbol: t.symbol,
+        name: t.name ?? pos?.name ?? t.symbol,
+        quantity: qty,
+        avgPrice: qty > 0 ? cost / qty : t.price,
+        // A newly supplied level replaces the previous one for the (now
+        // averaged) position; otherwise the existing level carries over.
+        stopLossPrice: t.stopLossPrice ?? pos?.stopLossPrice,
+        stopLossPercent:
+          t.stopLossPrice != null
+            ? ((t.stopLossPrice - t.price) / t.price) * 100
+            : pos?.stopLossPercent,
+        targetPrice: t.targetPrice ?? pos?.targetPrice,
+        targetPercent:
+          t.targetPrice != null
+            ? ((t.targetPrice - t.price) / t.price) * 100
+            : pos?.targetPercent,
+      };
+    } else if (pos) {
+      const remaining = pos.quantity - t.quantity;
+      if (remaining <= 0) delete out[t.symbol];
+      else out[t.symbol] = { ...pos, quantity: remaining };
+    }
+  }
+  return out;
+}
 const STORAGE_KEY = "demo-trading-state";
 const SESSION_KEY = "demo-session-id";
 
