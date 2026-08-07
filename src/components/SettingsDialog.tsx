@@ -299,9 +299,10 @@ const SettingsDialog = () => {
                         )}
                         {openSuggestIdx === i && suggestPos && row.symbol.trim() !== "" && (() => {
                           const suggestions = getSuggestions(row.symbol);
-                          return (
+                          return createPortal(
                             <div
                               ref={suggestPanelRef}
+                              data-symbol-suggest=""
                               role="listbox"
                               className="fixed z-50 overflow-y-auto overscroll-contain rounded-md border border-border bg-popover shadow-lg"
                               style={{
