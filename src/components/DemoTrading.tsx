@@ -6,6 +6,7 @@ import {
   Wallet,
   PlusCircle,
   RotateCcw,
+  Loader2,
 } from "lucide-react";
 import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
