@@ -8,9 +8,10 @@ import {
   RotateCcw,
   Loader2,
   ShieldAlert,
+  Target,
 } from "lucide-react";
 import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
-import { useStopLossMonitoring } from "@/hooks/useStopLossMonitoring";
+import { useAutoExitMonitoring, type ExitReason } from "@/hooks/useAutoExitMonitoring";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,8 +26,10 @@ interface Trade {
   time: string;
   /** Stop-loss level attached at buy time (BUY rows only). */
   stopLossPrice?: number;
+  /** Take-profit level attached at buy time (BUY rows only). */
+  targetPrice?: number;
   /** How a SELL row was triggered. Older rows have no value = manual. */
-  exitReason?: "manual" | "stop_loss";
+  exitReason?: "manual" | ExitReason;
 }
 
 interface Holding {
@@ -37,6 +40,9 @@ interface Holding {
   /** Optional protective exit level for the whole position. */
   stopLossPrice?: number;
   stopLossPercent?: number;
+  /** Optional take-profit exit level for the whole position. */
+  targetPrice?: number;
+  targetPercent?: number;
 }
 
 const MAX_BALANCE = 100000;
