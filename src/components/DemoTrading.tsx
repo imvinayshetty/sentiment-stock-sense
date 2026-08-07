@@ -301,6 +301,7 @@ const DemoTrading = () => {
   const handleSelect = (stock: StockQuote) => {
     setSelected(stock);
     setQuery("");
+    setSearchOpen(false);
   };
 
   const symbolCandidate = query.trim().toUpperCase();
@@ -324,6 +325,7 @@ const DemoTrading = () => {
         exchange: r.exchange,
       });
       setQuery("");
+      setSearchOpen(false);
       setResolveState({ loading: false, error: null });
     } catch (e) {
       setResolveState({ loading: false, error: (e as Error).message });
@@ -333,33 +335,33 @@ const DemoTrading = () => {
   // Clear any resolve error when the query changes.
   useEffect(() => {
     setResolveState((s) => (s.error ? { loading: s.loading, error: null } : s));
+    setActiveIdx(0);
   }, [q]);
 
-  // Position the search dropdown with fixed coordinates so it is not clipped
-  // by the table's horizontal-scroll (overflow) container.
-  useLayoutEffect(() => {
-    if (!query) {
-      setDropdownPos(null);
-      return;
+  // Dropdown is positioned in viewport coordinates so it is never clipped by
+  // the table's horizontal-scroll container, and flips up near the viewport
+  // bottom.
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+  const dropdownVisible = searchOpen && !!q;
+  const { anchorRef: searchRef, panelRef, pos: dropdownPos } = useAnchoredDropdown(
+    dropdownVisible,
+    closeSearch,
+  );
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!dropdownVisible || matches.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => (i + 1) % matches.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => (i - 1 + matches.length) % matches.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const pick = matches[activeIdx] ?? matches[0];
+      if (pick) handleSelect(pick);
     }
-    const update = () => {
-      const el = searchRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      setDropdownPos({
-        left: rect.left,
-        top: rect.bottom + 4,
-        width: rect.width,
-      });
-    };
-    update();
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
-  }, [query]);
+  };
 
   const handleTopUp = () => {
     const amount = Number(topUp);
