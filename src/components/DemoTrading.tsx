@@ -737,8 +737,11 @@ const DemoTrading = () => {
                 <input
                   type="number"
                   min={1}
+                  step={1}
                   value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  onChange={(e) =>
+                    setQuantity(Math.max(1, Math.floor(Number(e.target.value)) || 1))
+                  }
                   disabled={!liveSelected}
                   className="w-20 rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                 />
