@@ -45,10 +45,8 @@ interface DemoHolding {
   avgPrice: number;
   /** Optional protective exit level for the whole position. */
   stopLossPrice?: number;
-  stopLossPercent?: number;
   /** Optional take-profit exit level for the whole position. */
   targetPrice?: number;
-  targetPercent?: number;
 }
 
 const MAX_BALANCE = 100000;
@@ -76,15 +74,7 @@ function derivePositions(trades: Trade[]): Record<string, DemoHolding> {
         // A newly supplied level replaces the previous one for the (now
         // averaged) position; otherwise the existing level carries over.
         stopLossPrice: t.stopLossPrice ?? pos?.stopLossPrice,
-        stopLossPercent:
-          t.stopLossPrice != null
-            ? ((t.stopLossPrice - t.price) / t.price) * 100
-            : pos?.stopLossPercent,
         targetPrice: t.targetPrice ?? pos?.targetPrice,
-        targetPercent:
-          t.targetPrice != null
-            ? ((t.targetPrice - t.price) / t.price) * 100
-            : pos?.targetPercent,
       };
     } else if (pos) {
       const remaining = pos.quantity - t.quantity;
@@ -184,6 +174,7 @@ const DemoTrading = () => {
   );
   const [quantity, setQuantity] = useState(1);
   const [stopLossMethod, setStopLossMethod] = useState<"percentage" | "price">("percentage");
+  const [targetMethod, setTargetMethod] = useState<"percentage" | "price">("percentage");
   const [stopLossValue, setStopLossValue] = useState<string>("");
   const [targetValue, setTargetValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
@@ -447,7 +438,7 @@ const DemoTrading = () => {
         toast({ title: "Invalid target", description: "Enter a number.", variant: "destructive" });
         return;
       }
-      if (stopLossMethod === "percentage") {
+      if (targetMethod === "percentage") {
         const pct = Math.abs(v);
         tgtPercent = pct;
         tgtPrice = liveSelected.price * (1 + pct / 100);
@@ -761,27 +752,27 @@ const DemoTrading = () => {
               {/* Auto-exit (stop loss + target) column */}
               <td className="py-3 pr-4">
                 <div className="flex w-64 flex-col gap-1.5">
-                  <div className="flex rounded-lg border border-border p-0.5 text-[11px]">
-                    {(["percentage", "price"] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setStopLossMethod(m)}
-                        className={`flex-1 rounded-md px-2 py-1 font-medium transition-colors ${
-                          stopLossMethod === m
-                            ? "bg-primary/15 text-primary"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {m === "percentage" ? "By %" : "By ₹"}
-                      </button>
-                    ))}
-                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="mb-1 block text-[11px] font-medium text-chart-down">
                         Stop loss (lower)
                       </label>
+                      <div className="mb-1 flex rounded-lg border border-border p-0.5 text-[11px]">
+                        {(["percentage", "price"] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setStopLossMethod(m)}
+                            className={`flex-1 rounded-md px-1.5 py-0.5 font-medium transition-colors ${
+                              stopLossMethod === m
+                                ? "bg-primary/15 text-primary"
+                                : "text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {m === "percentage" ? "By %" : "By ₹"}
+                          </button>
+                        ))}
+                      </div>
                       <input
                         type="number"
                         value={stopLossValue}
@@ -804,18 +795,34 @@ const DemoTrading = () => {
                       <label className="mb-1 block text-[11px] font-medium text-chart-up">
                         Target (upper)
                       </label>
+                      <div className="mb-1 flex rounded-lg border border-border p-0.5 text-[11px]">
+                        {(["percentage", "price"] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setTargetMethod(m)}
+                            className={`flex-1 rounded-md px-1.5 py-0.5 font-medium transition-colors ${
+                              targetMethod === m
+                                ? "bg-primary/15 text-primary"
+                                : "text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {m === "percentage" ? "By %" : "By ₹"}
+                          </button>
+                        ))}
+                      </div>
                       <input
                         type="number"
                         value={targetValue}
                         onChange={(e) => setTargetValue(e.target.value)}
                         disabled={!liveSelected}
-                        placeholder={stopLossMethod === "percentage" ? "5 (%)" : "Price"}
+                        placeholder={targetMethod === "percentage" ? "5 (%)" : "Price"}
                         className="w-full rounded-lg border border-chart-up/40 bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                       />
                       {liveSelected && targetValue.trim() !== "" && Number.isFinite(Number(targetValue)) && (
                         <span className="mt-1 block text-[11px] text-muted-foreground">
                           Sell ≥ ₹
-                          {(stopLossMethod === "percentage"
+                          {(targetMethod === "percentage"
                             ? liveSelected.price * (1 + Math.abs(Number(targetValue)) / 100)
                             : Number(targetValue)
                           ).toFixed(2)}
@@ -964,8 +971,9 @@ const DemoTrading = () => {
             {trades.map((t) => (
               <div
                 key={t.id}
-                className="flex items-center gap-3 rounded-md border border-border bg-secondary/30 px-3 py-1.5 text-xs"
+                className="rounded-md border border-border bg-secondary/30 px-3 py-1.5 text-xs"
               >
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span
                   className={`font-semibold ${
                     t.side === "BUY" ? "text-chart-up" : "text-chart-down"
@@ -992,19 +1000,16 @@ const DemoTrading = () => {
                     Target hit
                   </span>
                 )}
-                {t.side === "BUY" && t.stopLossPrice != null && (
-                  <span className="font-mono text-muted-foreground">
-                    SL ₹{t.stopLossPrice.toFixed(2)}
-                  </span>
-                )}
-                {t.side === "BUY" && t.targetPrice != null && (
-                  <span className="font-mono text-muted-foreground">
-                    Tgt ₹{t.targetPrice.toFixed(2)}
-                  </span>
-                )}
                 <span className="ml-auto font-mono text-muted-foreground">
                   {t.time}
                 </span>
+                </div>
+                {t.side === "BUY" && (t.stopLossPrice != null || t.targetPrice != null) && (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
+                    {t.stopLossPrice != null && <span>SL ₹{t.stopLossPrice.toFixed(2)}</span>}
+                    {t.targetPrice != null && <span>Tgt ₹{t.targetPrice.toFixed(2)}</span>}
+                  </div>
+                )}
               </div>
             ))}
           </div>
