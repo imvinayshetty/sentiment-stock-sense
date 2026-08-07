@@ -705,8 +705,7 @@ const DemoTrading = () => {
                           onPointerDown={(e) => e.preventDefault()}
                           onClick={() => handleSelect(s)}
                           className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left ${
-                            idx === activeIdx ? "bg-accent" : ""
-                          } hover:bg-accent`}
+                            idx === activeIdx ? "bg-secondary" : ""} hover:bg-secondary`}
                         >
                           <span className="flex min-w-0 flex-1 flex-col">
                             <span className="font-mono text-sm font-bold text-foreground">
