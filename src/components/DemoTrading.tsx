@@ -96,6 +96,8 @@ const DemoTrading = () => {
   } | null>(null);
   const [trades, setTrades] = useState<Trade[]>(() => loadState("trades", []));
   const [quantity, setQuantity] = useState(1);
+  const [stopLossMethod, setStopLossMethod] = useState<"percentage" | "price">("percentage");
+  const [stopLossValue, setStopLossValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
   const [topUp, setTopUp] = useState("");
   const [holdings, setHoldings] = useState<Record<string, Holding>>(() =>
