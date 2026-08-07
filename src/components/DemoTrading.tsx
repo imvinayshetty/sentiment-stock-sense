@@ -8,9 +8,10 @@ import {
   RotateCcw,
   Loader2,
   ShieldAlert,
+  Target,
 } from "lucide-react";
 import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
-import { useStopLossMonitoring } from "@/hooks/useStopLossMonitoring";
+import { useAutoExitMonitoring, type ExitReason } from "@/hooks/useAutoExitMonitoring";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,8 +26,10 @@ interface Trade {
   time: string;
   /** Stop-loss level attached at buy time (BUY rows only). */
   stopLossPrice?: number;
+  /** Take-profit level attached at buy time (BUY rows only). */
+  targetPrice?: number;
   /** How a SELL row was triggered. Older rows have no value = manual. */
-  exitReason?: "manual" | "stop_loss";
+  exitReason?: "manual" | ExitReason;
 }
 
 interface Holding {
@@ -37,9 +40,13 @@ interface Holding {
   /** Optional protective exit level for the whole position. */
   stopLossPrice?: number;
   stopLossPercent?: number;
+  /** Optional take-profit exit level for the whole position. */
+  targetPrice?: number;
+  targetPercent?: number;
 }
 
 const MAX_BALANCE = 100000;
+const EMPTY_POSITIONS: Holding[] = [];
 const STORAGE_KEY = "demo-trading-state";
 const SESSION_KEY = "demo-session-id";
 
@@ -98,6 +105,7 @@ const DemoTrading = () => {
   const [quantity, setQuantity] = useState(1);
   const [stopLossMethod, setStopLossMethod] = useState<"percentage" | "price">("percentage");
   const [stopLossValue, setStopLossValue] = useState<string>("");
+  const [targetValue, setTargetValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
   const [topUp, setTopUp] = useState("");
   const [holdings, setHoldings] = useState<Record<string, Holding>>(() =>
@@ -300,6 +308,8 @@ const DemoTrading = () => {
     const total = liveSelected.price * qty;
     let slPrice: number | undefined;
     let slPercent: number | undefined;
+    let tgtPrice: number | undefined;
+    let tgtPercent: number | undefined;
 
     if (side === "BUY" && stopLossValue.trim() !== "") {
       const v = Number(stopLossValue);
@@ -319,6 +329,38 @@ const DemoTrading = () => {
         toast({
           title: "Invalid stop loss",
           description: `Stop loss must be above 0 and below ₹${liveSelected.price.toFixed(2)}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    if (side === "BUY" && targetValue.trim() !== "") {
+      const v = Number(targetValue);
+      if (!Number.isFinite(v)) {
+        toast({ title: "Invalid target", description: "Enter a number.", variant: "destructive" });
+        return;
+      }
+      if (stopLossMethod === "percentage") {
+        const pct = Math.abs(v);
+        tgtPercent = pct;
+        tgtPrice = liveSelected.price * (1 + pct / 100);
+      } else {
+        tgtPrice = v;
+        tgtPercent = ((v - liveSelected.price) / liveSelected.price) * 100;
+      }
+      if (!(tgtPrice > 0) || tgtPrice <= liveSelected.price) {
+        toast({
+          title: "Invalid target",
+          description: `Target must be above the entry price ₹${liveSelected.price.toFixed(2)}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      if (slPrice != null && tgtPrice <= slPrice) {
+        toast({
+          title: "Invalid limits",
+          description: "Target price must be above the stop loss price.",
           variant: "destructive",
         });
         return;
@@ -352,6 +394,8 @@ const DemoTrading = () => {
             // (now averaged) position; otherwise keep the existing one.
             stopLossPrice: slPrice ?? existing?.stopLossPrice,
             stopLossPercent: slPrice != null ? slPercent : existing?.stopLossPercent,
+            targetPrice: tgtPrice ?? existing?.targetPrice,
+            targetPercent: tgtPrice != null ? tgtPercent : existing?.targetPercent,
           },
         };
       });
@@ -386,6 +430,7 @@ const DemoTrading = () => {
       quantity: qty,
       total,
       stopLossPrice: side === "BUY" ? slPrice : undefined,
+      targetPrice: side === "BUY" ? tgtPrice : undefined,
       exitReason: side === "SELL" ? "manual" : undefined,
       time: new Date().toLocaleTimeString("en-IN", {
         hour: "2-digit",
@@ -394,20 +439,23 @@ const DemoTrading = () => {
       }),
     };
     setTrades((prev) => [trade, ...prev].slice(0, 50));
-    if (side === "BUY") setStopLossValue("");
+    if (side === "BUY") {
+      setStopLossValue("");
+      setTargetValue("");
+    }
     toast({
       title: `${side} order placed (demo)`,
       description: `${qty} × ${liveSelected.symbol} @ ₹${liveSelected.price.toFixed(2)} = ₹${total.toFixed(2)}${
         slPrice != null ? ` · SL ₹${slPrice.toFixed(2)}` : ""
-      }`,
+      }${tgtPrice != null ? ` · Target ₹${tgtPrice.toFixed(2)}` : ""}`,
     });
   };
 
   const holdingsList = useMemo(() => Object.values(holdings), [holdings]);
 
-  // Auto-exit a position when live price breaches its stop loss.
-  const handleStopLossHit = useCallback(
-    (symbol: string, exitPrice: number) => {
+  // Auto-exit a position when live price breaches its stop loss or target.
+  const handleAutoExit = useCallback(
+    (symbol: string, exitPrice: number, reason: ExitReason) => {
       setHoldings((prev) => {
         const pos = prev[symbol];
         if (!pos) return prev;
@@ -422,7 +470,7 @@ const DemoTrading = () => {
               price: exitPrice,
               quantity: pos.quantity,
               total: proceeds,
-              exitReason: "stop_loss" as const,
+              exitReason: reason,
               time: new Date().toLocaleTimeString("en-IN", {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -433,9 +481,9 @@ const DemoTrading = () => {
           ].slice(0, 50),
         );
         toast({
-          title: "Stop loss triggered",
+          title: reason === "target_reached" ? "Target reached" : "Stop loss triggered",
           description: `${symbol}: sold ${pos.quantity} @ ₹${exitPrice.toFixed(2)}`,
-          variant: "destructive",
+          variant: reason === "target_reached" ? "default" : "destructive",
         });
         const next = { ...prev };
         delete next[symbol];
@@ -445,7 +493,10 @@ const DemoTrading = () => {
     [toast],
   );
 
-  useStopLossMonitoring(holdingsList, priceMap, handleStopLossHit);
+  // Only auto-exit while the market is open — closed-market last prices should
+  // not trigger fills.
+  const monitored = quotes?.marketStatus === "OPEN" ? holdingsList : EMPTY_POSITIONS;
+  useAutoExitMonitoring(monitored, priceMap, handleAutoExit);
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
@@ -502,7 +553,7 @@ const DemoTrading = () => {
               <th className="py-2 pr-4 font-medium">Stock</th>
               <th className="py-2 pr-4 font-medium">Current Price</th>
               <th className="py-2 pr-4 font-medium">Quantity</th>
-              <th className="py-2 pr-4 font-medium">Stop Loss</th>
+              <th className="py-2 pr-4 font-medium">Auto-Exit Rules</th>
               <th className="py-2 pr-4 font-medium">Buy</th>
               <th className="py-2 font-medium">Sell</th>
             </tr>
@@ -620,9 +671,9 @@ const DemoTrading = () => {
                 />
               </td>
 
-              {/* Stop loss column */}
+              {/* Auto-exit (stop loss + target) column */}
               <td className="py-3 pr-4">
-                <div className="flex w-40 flex-col gap-1.5">
+                <div className="flex w-64 flex-col gap-1.5">
                   <div className="flex rounded-lg border border-border p-0.5 text-[11px]">
                     {(["percentage", "price"] as const).map((m) => (
                       <button
@@ -639,23 +690,52 @@ const DemoTrading = () => {
                       </button>
                     ))}
                   </div>
-                  <input
-                    type="number"
-                    value={stopLossValue}
-                    onChange={(e) => setStopLossValue(e.target.value)}
-                    disabled={!liveSelected}
-                    placeholder={stopLossMethod === "percentage" ? "2 (%)" : "Price"}
-                    className="w-full rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
-                  />
-                  {liveSelected && stopLossValue.trim() !== "" && Number.isFinite(Number(stopLossValue)) && (
-                    <span className="text-[11px] text-muted-foreground">
-                      SL ₹
-                      {(stopLossMethod === "percentage"
-                        ? liveSelected.price * (1 - Math.abs(Number(stopLossValue)) / 100)
-                        : Number(stopLossValue)
-                      ).toFixed(2)}
-                    </span>
-                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-chart-down">
+                        Stop loss (lower)
+                      </label>
+                      <input
+                        type="number"
+                        value={stopLossValue}
+                        onChange={(e) => setStopLossValue(e.target.value)}
+                        disabled={!liveSelected}
+                        placeholder={stopLossMethod === "percentage" ? "2 (%)" : "Price"}
+                        className="w-full rounded-lg border border-chart-down/40 bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      />
+                      {liveSelected && stopLossValue.trim() !== "" && Number.isFinite(Number(stopLossValue)) && (
+                        <span className="mt-1 block text-[11px] text-muted-foreground">
+                          Sell ≤ ₹
+                          {(stopLossMethod === "percentage"
+                            ? liveSelected.price * (1 - Math.abs(Number(stopLossValue)) / 100)
+                            : Number(stopLossValue)
+                          ).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-chart-up">
+                        Target (upper)
+                      </label>
+                      <input
+                        type="number"
+                        value={targetValue}
+                        onChange={(e) => setTargetValue(e.target.value)}
+                        disabled={!liveSelected}
+                        placeholder={stopLossMethod === "percentage" ? "5 (%)" : "Price"}
+                        className="w-full rounded-lg border border-chart-up/40 bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      />
+                      {liveSelected && targetValue.trim() !== "" && Number.isFinite(Number(targetValue)) && (
+                        <span className="mt-1 block text-[11px] text-muted-foreground">
+                          Sell ≥ ₹
+                          {(stopLossMethod === "percentage"
+                            ? liveSelected.price * (1 + Math.abs(Number(targetValue)) / 100)
+                            : Number(targetValue)
+                          ).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </td>
 
@@ -702,7 +782,8 @@ const DemoTrading = () => {
                   <th className="py-2 pr-4 font-medium">Purchased Value</th>
                   <th className="py-2 pr-4 font-medium">Current Value</th>
                   <th className="py-2 pr-4 font-medium">P/L</th>
-                  <th className="py-2 font-medium">Stop Loss</th>
+                  <th className="py-2 pr-4 font-medium">Stop Loss</th>
+                  <th className="py-2 font-medium">Target</th>
                 </tr>
               </thead>
               <tbody>
@@ -718,6 +799,11 @@ const DemoTrading = () => {
                       ? ((livePrice - h.stopLossPrice) / livePrice) * 100
                       : null;
                   const slNear = slDistancePct != null && slDistancePct < 1;
+                  const tgtDistancePct =
+                    h.targetPrice != null && livePrice > 0
+                      ? ((h.targetPrice - livePrice) / livePrice) * 100
+                      : null;
+                  const tgtNear = tgtDistancePct != null && tgtDistancePct < 1;
                   return (
                     <tr key={h.symbol} className="border-b border-border">
                       <td className="py-2 pr-4">
@@ -747,7 +833,7 @@ const DemoTrading = () => {
                         ₹{pl.toFixed(2)} ({up ? "+" : ""}
                         {plPct.toFixed(2)}%)
                       </td>
-                      <td className="py-2 font-mono text-xs">
+                      <td className="py-2 pr-4 font-mono text-xs">
                         {h.stopLossPrice != null ? (
                           <div className={slNear ? "text-chart-down" : "text-muted-foreground"}>
                             <div className="flex items-center gap-1 font-semibold">
@@ -755,6 +841,19 @@ const DemoTrading = () => {
                               SL ₹{h.stopLossPrice.toFixed(2)}
                             </div>
                             <div>{slDistancePct!.toFixed(2)}% away</div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 font-mono text-xs">
+                        {h.targetPrice != null ? (
+                          <div className={tgtNear ? "text-chart-up" : "text-muted-foreground"}>
+                            <div className="flex items-center gap-1 font-semibold">
+                              {tgtNear && <Target className="h-3.5 w-3.5" />}
+                              ₹{h.targetPrice.toFixed(2)}
+                            </div>
+                            <div>{tgtDistancePct!.toFixed(2)}% away</div>
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -801,9 +900,19 @@ const DemoTrading = () => {
                     SL hit
                   </span>
                 )}
+                {t.exitReason === "target_reached" && (
+                  <span className="rounded bg-chart-up/15 px-1.5 py-0.5 font-semibold text-chart-up">
+                    Target hit
+                  </span>
+                )}
                 {t.side === "BUY" && t.stopLossPrice != null && (
                   <span className="font-mono text-muted-foreground">
                     SL ₹{t.stopLossPrice.toFixed(2)}
+                  </span>
+                )}
+                {t.side === "BUY" && t.targetPrice != null && (
+                  <span className="font-mono text-muted-foreground">
+                    Tgt ₹{t.targetPrice.toFixed(2)}
                   </span>
                 )}
                 <span className="ml-auto font-mono text-muted-foreground">
