@@ -38,6 +38,48 @@ export type Database = {
         }
         Relationships: []
       }
+      basket_prediction: {
+        Row: {
+          base_price: number
+          basket_date: string
+          close_price: number | null
+          correct: boolean | null
+          created_at: string
+          direction: string
+          id: string
+          predicted_close: number
+          scored_at: string | null
+          session_id: string
+          symbol: string
+        }
+        Insert: {
+          base_price: number
+          basket_date: string
+          close_price?: number | null
+          correct?: boolean | null
+          created_at?: string
+          direction: string
+          id?: string
+          predicted_close: number
+          scored_at?: string | null
+          session_id: string
+          symbol: string
+        }
+        Update: {
+          base_price?: number
+          basket_date?: string
+          close_price?: number | null
+          correct?: boolean | null
+          created_at?: string
+          direction?: string
+          id?: string
+          predicted_close?: number
+          scored_at?: string | null
+          session_id?: string
+          symbol?: string
+        }
+        Relationships: []
+      }
       demo_state: {
         Row: {
           created_at: string
