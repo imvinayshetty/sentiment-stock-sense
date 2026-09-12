@@ -734,14 +734,24 @@ serve(async (req) => {
       const supabase = getSupabase();
       const market = getMarketStatus();
       const nowIst = new Date(Date.now() + (5 * 60 + 30) * 60 * 1000);
-      const basketDate = nowIst.toISOString().slice(0, 10);
+      const todayIst = nowIst.toISOString().slice(0, 10);
       const istMinutes = nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes();
-      const sessionEnded = istMinutes > 15 * 60 + 30 || market.status === "CLOSED";
+      const isTradingDay = (d: Date) => {
+        const dow = d.getUTCDay();
+        return dow >= 1 && dow <= 5 && !NSE_HOLIDAYS.has(d.toISOString().slice(0, 10));
+      };
+      // On weekends/holidays there is no session to forecast, so show the most
+      // recent trading day's basket instead of logging an unscorable one.
+      const tradingToday = isTradingDay(nowIst);
+      const cursor = new Date(nowIst);
+      while (!isTradingDay(cursor)) cursor.setUTCDate(cursor.getUTCDate() - 1);
+      const basketDate = cursor.toISOString().slice(0, 10);
+      const sessionEnded = basketDate < todayIst || istMinutes > 15 * 60 + 30;
 
       const { data: existing } = await supabase
         .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);
       const known = new Set((existing ?? []).map((r: any) => r.symbol));
-      const missing = rawSymbols.filter((s) => !known.has(s));
+      const missing = tradingToday ? rawSymbols.filter((s) => !known.has(s)) : [];
 
       // Record the open snapshot for stocks not yet logged today.
       if (missing.length) {
