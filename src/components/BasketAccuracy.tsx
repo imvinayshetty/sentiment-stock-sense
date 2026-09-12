@@ -32,7 +32,12 @@ const BasketAccuracy = () => {
           <h3 className="text-lg font-semibold text-foreground">Today's Basket Accuracy</h3>
         </div>
         <span className="rounded-full bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground">
-          {data?.basketDate ?? "—"} · {data?.phase === "closed" ? "session closed" : "session open"}
+          {data?.basketDate ?? "—"} ·{" "}
+          {data && !data.tradingToday
+            ? "last trading day"
+            : data?.phase === "closed"
+              ? "session closed"
+              : "session open"}
         </span>
       </div>
 
@@ -40,7 +45,9 @@ const BasketAccuracy = () => {
         <p className="text-sm text-muted-foreground">Recording today's basket…</p>
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No stocks fit today's budget yet, so nothing has been logged for today.
+          {data && !data.tradingToday
+            ? "The market is shut today, so no basket was logged. The next one is recorded at the next market open."
+            : "No stocks fit today's budget yet, so nothing has been logged for today."}
         </p>
       ) : (
         <>
