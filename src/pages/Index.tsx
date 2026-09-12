@@ -32,7 +32,6 @@ const Index = () => {
     // Prefix-match so HoldingsSellPanel rows (each keyed by their own symbol) also refresh.
     queryClient.invalidateQueries({ queryKey: ["forecast"], refetchType: "active" });
     queryClient.invalidateQueries({ queryKey: ["news-sentiment"], refetchType: "active" });
-    queryClient.invalidateQueries({ queryKey: ["backtest", selectedSymbol], refetchType: "active" });
   };
 
   return (
