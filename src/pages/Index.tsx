@@ -114,10 +114,9 @@ const Index = () => {
           <PriceTarget symbol={selectedSymbol} />
         </div>
 
-        {/* Backtesting */}
-        <div className="animate-fade-in-up space-y-6" style={{ animationDelay: "375ms" }}>
+        {/* Basket Accuracy */}
+        <div className="animate-fade-in-up" style={{ animationDelay: "375ms" }}>
           <BasketAccuracy />
-          <Backtest symbol={selectedSymbol} />
         </div>
 
 
