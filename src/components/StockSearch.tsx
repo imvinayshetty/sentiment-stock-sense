@@ -239,7 +239,7 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
               <TrendingUp className="h-4 w-4 text-chart-up" />
               <h2 className="text-sm font-semibold text-foreground">Top 10 to Buy</h2>
               <span className="ml-auto text-xs text-muted-foreground">
-                {budgetMax != null ? `Under ₹${budgetMax.toLocaleString("en-IN")}` : "Strong momentum today"}
+                {budgetMax != null ? `₹${budgetMax.toLocaleString("en-IN")} total mix` : "Strong momentum today"}
               </span>
             </header>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
@@ -249,7 +249,7 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
               )}
               {!showNoVerifiedData && topBuy.length === 0 && budgetMax != null && (
                 <p className="col-span-full text-sm text-muted-foreground">
-                  No stocks currently priced at or below ₹{budgetMax.toLocaleString("en-IN")}. Raise your budget in Portfolio settings.
+                  No stocks fit within your ₹{budgetMax.toLocaleString("en-IN")} total budget. Raise it in Portfolio settings.
                 </p>
               )}
             </div>
