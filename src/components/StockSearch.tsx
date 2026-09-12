@@ -1,24 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
-import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
-import { getStockDirectory, type StockQuote } from "@/lib/stockData";
+import { resolveSymbol } from "@/hooks/useAngelOneData";
+import type { StockQuote } from "@/lib/stockData";
 import { useUserSettings } from "@/hooks/useUserSettings";
+import { useDailyBasket } from "@/hooks/useDailyBasket";
 import HoldingsSellPanel from "./HoldingsSellPanel";
 
 interface StockSearchProps {
   onSelect: (symbol: string) => void;
   selectedSymbol: string;
-}
-
-function scoreStock(s: StockQuote): number {
-  // Today's movement (history-relative via prev close baked into changePercent)
-  const move = s.changePercent ?? 0;
-  // Intraday momentum: where price sits in the day's range (0 = at low, 1 = at high)
-  const range = (s.high ?? s.price) - (s.low ?? s.price);
-  const pos = range > 0 ? ((s.price - (s.low ?? s.price)) / range) : 0.5;
-  // Gap from open: extends/contradicts trend
-  const gap = s.open ? ((s.price - s.open) / s.open) * 100 : 0;
-  return move * 1.0 + (pos - 0.5) * 2 + gap * 0.3;
 }
 
 const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
@@ -28,20 +18,14 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
     error: null,
   });
   const { settings } = useUserSettings();
-  const budgetMax = settings.budgetMax;
   const holdings = settings.holdings;
   // Remember the last symbol the user explicitly clicked, so that when an
   // auto-selected (typed) query is cleared we can restore their real choice.
   const lastExplicitRef = useRef(selectedSymbol);
-  const { data: quotes, isLoading } = useStockQuotes();
-  const liveStocks = quotes?.data ?? [];
-  const directory = getStockDirectory();
-  const stocks = useMemo<StockQuote[]>(() => {
-    const liveMap = new Map(liveStocks.map((s) => [s.symbol, s]));
-    return directory
-      .map((entry) => liveMap.get(entry.symbol))
-      .filter((stock): stock is StockQuote => Boolean(stock));
-  }, [directory, liveStocks]);
+  // Ranking + budget allocation are shared with the daily-accuracy panel so both
+  // always describe the exact same basket of stocks.
+  const { stocks, ranked, topBuy, suggestedQty, budgetMax, isLoading } = useDailyBasket();
+
 
   const q = query.trim().toLowerCase();
   const filtered = q
