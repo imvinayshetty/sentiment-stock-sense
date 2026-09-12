@@ -95,38 +95,6 @@ const StockSearch = ({ onSelect, selectedSymbol }: StockSearchProps) => {
     if (!q) lastExplicitRef.current = selectedSymbol;
   }, [selectedSymbol, q]);
 
-  const ranked = [...stocks].sort((a, b) => scoreStock(b) - scoreStock(a));
-
-  // Total-budget allocation: split the budget into up to 10 equal slots and
-  // greedily fill each with the highest-ranked stock affordable within that
-  // slot. This produces a diversified mix (large-, mid-, small-price names)
-  // rather than 10 shares of the single strongest mover.
-  const { topBuy, suggestedQty } = useMemo(() => {
-    if (budgetMax == null) {
-      return { topBuy: ranked.slice(0, 10), suggestedQty: new Map<string, number>() };
-    }
-    let remaining = budgetMax;
-    const picks: StockQuote[] = [];
-    const qty = new Map<string, number>();
-    const used = new Set<string>();
-    for (let slot = 0; slot < 10 && remaining > 0; slot++) {
-      const perSlot = remaining / (10 - slot);
-      const candidate = ranked.find((s) => !used.has(s.symbol) && s.price > 0 && s.price <= perSlot);
-      if (!candidate) {
-        // Nothing affordable in this slot; skip it so remaining budget
-        // carries forward to cheaper slots.
-        continue;
-      }
-      const shares = Math.max(1, Math.floor(perSlot / candidate.price));
-      const cost = shares * candidate.price;
-      if (cost > remaining) continue;
-      used.add(candidate.symbol);
-      picks.push(candidate);
-      qty.set(candidate.symbol, shares);
-      remaining -= cost;
-    }
-    return { topBuy: picks, suggestedQty: qty };
-  }, [ranked, budgetMax]);
   // Only compute when there are no holdings; otherwise HoldingsSellPanel replaces this list.
   const topSell = holdings.length === 0 ? ranked.slice(-10).reverse() : [];
   const showNoVerifiedData = !isLoading && stocks.length === 0;
