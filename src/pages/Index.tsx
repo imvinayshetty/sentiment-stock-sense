@@ -115,9 +115,11 @@ const Index = () => {
         </div>
 
         {/* Backtesting */}
-        <div className="animate-fade-in-up" style={{ animationDelay: "375ms" }}>
+        <div className="animate-fade-in-up space-y-6" style={{ animationDelay: "375ms" }}>
+          <BasketAccuracy />
           <Backtest symbol={selectedSymbol} />
         </div>
+
 
         {/* Demo Trading */}
         <div className="animate-fade-in-up" style={{ animationDelay: "400ms" }}>
