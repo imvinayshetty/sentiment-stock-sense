@@ -827,6 +827,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: true,
         basketDate,
+        tradingToday,
         phase: sessionEnded ? "closed" : "open",
         rows: rows.map((r: any) => ({
           symbol: r.symbol,
