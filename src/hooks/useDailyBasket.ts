@@ -98,6 +98,7 @@ export interface BasketRow {
 export interface BasketAccuracyPayload {
   basketDate: string;
   phase: "open" | "closed";
+  tradingToday: boolean;
   rows: BasketRow[];
   scored: number;
   correct: number;
