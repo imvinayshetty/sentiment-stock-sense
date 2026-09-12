@@ -11,6 +11,7 @@ import SentimentGauge from "@/components/SentimentGauge";
 import PriceTarget from "@/components/PriceTarget";
 import NewsFeed from "@/components/NewsFeed";
 import Backtest from "@/components/Backtest";
+import BasketAccuracy from "@/components/BasketAccuracy";
 import DemoTrading from "@/components/DemoTrading";
 import { useStockQuotes, useForecast, useNewsSentiment } from "@/hooks/useAngelOneData";
 
@@ -115,9 +116,11 @@ const Index = () => {
         </div>
 
         {/* Backtesting */}
-        <div className="animate-fade-in-up" style={{ animationDelay: "375ms" }}>
+        <div className="animate-fade-in-up space-y-6" style={{ animationDelay: "375ms" }}>
+          <BasketAccuracy />
           <Backtest symbol={selectedSymbol} />
         </div>
+
 
         {/* Demo Trading */}
         <div className="animate-fade-in-up" style={{ animationDelay: "400ms" }}>

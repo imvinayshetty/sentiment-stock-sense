@@ -714,6 +714,137 @@ serve(async (req) => {
       });
     }
 
+    // ---- Daily basket accuracy -------------------------------------------
+    // Records a same-day forecast for every stock in the user's budget-based
+    // Top 10 (once per day, at first call after market open) and scores those
+    // forecasts against the actual close once the session ends.
+    if (action === "basket") {
+      const session = url.searchParams.get("session") ?? "";
+      const rawSymbols = (url.searchParams.get("symbols") ?? "")
+        .split(",")
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => s && isValidSymbol(s))
+        .slice(0, 10);
+      if (!session || rawSymbols.length === 0) {
+        return new Response(JSON.stringify({ success: false, error: "session and symbols are required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const supabase = getSupabase();
+      const market = getMarketStatus();
+      const nowIst = new Date(Date.now() + (5 * 60 + 30) * 60 * 1000);
+      const todayIst = nowIst.toISOString().slice(0, 10);
+      const istMinutes = nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes();
+      const isTradingDay = (d: Date) => {
+        const dow = d.getUTCDay();
+        return dow >= 1 && dow <= 5 && !NSE_HOLIDAYS.has(d.toISOString().slice(0, 10));
+      };
+      // On weekends/holidays there is no session to forecast, so show the most
+      // recent trading day's basket instead of logging an unscorable one.
+      const tradingToday = isTradingDay(nowIst);
+      const cursor = new Date(nowIst);
+      while (!isTradingDay(cursor)) cursor.setUTCDate(cursor.getUTCDate() - 1);
+      const basketDate = cursor.toISOString().slice(0, 10);
+      const sessionEnded = basketDate < todayIst || istMinutes > 15 * 60 + 30;
+
+      const { data: existing } = await supabase
+        .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);
+      const known = new Set((existing ?? []).map((r: any) => r.symbol));
+      const missing = tradingToday ? rawSymbols.filter((s) => !known.has(s)) : [];
+
+      // Record the open snapshot for stocks not yet logged today.
+      if (missing.length) {
+        const inserts = await fetchInBatches(missing, 5, async (sym) => {
+          try {
+            const info = resolveSymbolInfo(sym);
+            const chart = await fetchChart(info.yahooSymbol, "3mo", "1d");
+            const candles = mapHistorical(chart);
+            const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
+            const result = computeForecast(closes);
+            if (!result) return null;
+            const quote = mapQuote(sym, info, chart);
+            const base = Number(quote?.open ?? result.lastPrice);
+            const predicted = result.forecast[0].forecast;
+            return {
+              session_id: session,
+              basket_date: basketDate,
+              symbol: sym,
+              base_price: base,
+              predicted_close: predicted,
+              direction: predicted >= base ? "up" : "down",
+            };
+          } catch (e) {
+            console.error(`Basket snapshot failed for ${sym}:`, e);
+            return null;
+          }
+        });
+        const rows = inserts.filter(Boolean);
+        if (rows.length) {
+          await supabase.from("basket_prediction")
+            .upsert(rows, { onConflict: "session_id,basket_date,symbol", ignoreDuplicates: true });
+        }
+      }
+
+      const { data: dayRows } = await supabase
+        .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);
+      let rows = dayRows ?? [];
+
+      // Score unscored rows once the trading session has ended.
+      const unscored = rows.filter((r: any) => r.close_price == null);
+      if (sessionEnded && unscored.length) {
+        const scored = await fetchInBatches(unscored, 5, async (row: any) => {
+          try {
+            const info = resolveSymbolInfo(row.symbol);
+            const chart = await fetchChart(info.yahooSymbol, "5d", "1d");
+            const closeByDate = isoToCloseMap(mapHistorical(chart));
+            const actual = closeByDate[basketDate];
+            if (!actual) return null;
+            const wentUp = actual > Number(row.base_price);
+            const correct = (row.direction === "up") === wentUp;
+            await supabase.from("basket_prediction")
+              .update({ close_price: actual, correct, scored_at: new Date().toISOString() })
+              .eq("id", row.id);
+            return { id: row.id, close_price: actual, correct };
+          } catch (e) {
+            console.error(`Basket scoring failed for ${row.symbol}:`, e);
+            return null;
+          }
+        });
+        const byId = new Map(scored.filter(Boolean).map((s: any) => [s.id, s]));
+        rows = rows.map((r: any) => (byId.has(r.id) ? { ...r, ...byId.get(r.id) } : r));
+      }
+
+      const done = rows.filter((r: any) => r.close_price != null);
+      const correctCount = done.filter((r: any) => r.correct).length;
+      let absErr = 0, pctErr = 0;
+      for (const r of done) {
+        const err = Math.abs(Number(r.predicted_close) - Number(r.close_price));
+        absErr += err;
+        if (Number(r.close_price) > 0) pctErr += (err / Number(r.close_price)) * 100;
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        basketDate,
+        tradingToday,
+        phase: sessionEnded ? "closed" : "open",
+        rows: rows.map((r: any) => ({
+          symbol: r.symbol,
+          base_price: Number(r.base_price),
+          predicted_close: Number(r.predicted_close),
+          direction: r.direction,
+          close_price: r.close_price != null ? Number(r.close_price) : null,
+          correct: r.correct,
+        })),
+        scored: done.length,
+        correct: correctCount,
+        accuracy: done.length ? Math.round((correctCount / done.length) * 100) : null,
+        mae: done.length ? Number((absErr / done.length).toFixed(2)) : null,
+        mape: done.length ? Number((pctErr / done.length).toFixed(2)) : null,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "symbols") {
       const symbols = Object.entries(STOCK_TOKENS).map(([stockSymbol, info]) => ({
         symbol: stockSymbol,
