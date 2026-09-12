@@ -219,7 +219,7 @@ const SettingsDialog = () => {
 
         <div className="space-y-6 py-2">
           <div className="space-y-2">
-            <Label htmlFor="budget-max">Maximum budget per stock (₹)</Label>
+            <Label htmlFor="budget-max">Total budget (₹)</Label>
             <Input
               id="budget-max"
               type="number"
@@ -230,7 +230,7 @@ const SettingsDialog = () => {
               placeholder="e.g. 5000"
             />
             <p className="text-xs text-muted-foreground">
-              Min ₹1. Leave empty to see all buy candidates regardless of price.
+              Min ₹1. The Top 10 to Buy is built as a diversified mix within this total, with suggested share counts. Leave empty to see all candidates regardless of price.
             </p>
           </div>
 
