@@ -10,7 +10,6 @@ import PredictionChart from "@/components/PredictionChart";
 import SentimentGauge from "@/components/SentimentGauge";
 import PriceTarget from "@/components/PriceTarget";
 import NewsFeed from "@/components/NewsFeed";
-import Backtest from "@/components/Backtest";
 import BasketAccuracy from "@/components/BasketAccuracy";
 import DemoTrading from "@/components/DemoTrading";
 import { useStockQuotes, useForecast, useNewsSentiment } from "@/hooks/useAngelOneData";
@@ -33,7 +32,6 @@ const Index = () => {
     // Prefix-match so HoldingsSellPanel rows (each keyed by their own symbol) also refresh.
     queryClient.invalidateQueries({ queryKey: ["forecast"], refetchType: "active" });
     queryClient.invalidateQueries({ queryKey: ["news-sentiment"], refetchType: "active" });
-    queryClient.invalidateQueries({ queryKey: ["backtest", selectedSymbol], refetchType: "active" });
   };
 
   return (
@@ -115,10 +113,9 @@ const Index = () => {
           <PriceTarget symbol={selectedSymbol} />
         </div>
 
-        {/* Backtesting */}
-        <div className="animate-fade-in-up space-y-6" style={{ animationDelay: "375ms" }}>
+        {/* Basket Accuracy */}
+        <div className="animate-fade-in-up" style={{ animationDelay: "375ms" }}>
           <BasketAccuracy />
-          <Backtest symbol={selectedSymbol} />
         </div>
 
 
