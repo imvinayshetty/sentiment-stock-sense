@@ -41,8 +41,11 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
     try {
       const res = await callAuth<{ secret: string; otpauth: string }>({ action: "enroll" });
       setSecret(res.secret);
-      setQr(await QRCode.toDataURL(res.otpauth, { width: 220, margin: 1 }));
       setPhase("enroll");
+      // Never let QR rendering block the setup screen: the manual key is always shown.
+      QRCode.toDataURL(res.otpauth, { width: 220, margin: 1 })
+        .then(setQr)
+        .catch((qrErr) => console.error("QR render failed", qrErr));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start setup");
       setPhase("verify");
