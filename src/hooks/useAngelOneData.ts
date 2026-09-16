@@ -125,7 +125,7 @@ export interface SentimentPayload {
   scoredBy: "groq" | "default";
 }
 
-export function useNewsSentiment(symbol: string) {
+export function useNewsSentiment(symbol: string, enabled = true) {
   return useQuery<SentimentPayload>({
     queryKey: ["news-sentiment", symbol],
     queryFn: async () => {
