@@ -109,26 +109,57 @@ async function fetchNews(query: string, symbol: string): Promise<RawArticle[]> {
   return [];
 }
 
-async function scoreWithGroq(apiKey: string, company: string, headlines: string[]): Promise<{ scores: number[]; overall: number }> {
-  // Cap each headline to 120 chars to stay well within Groq's context window.
+async function scoreWithLovableAi(apiKey: string, company: string, headlines: string[]): Promise<{ scores: number[]; overall: number }> {
   const capped = headlines.map((h) => h.slice(0, 120));
-  const prompt = `You are a financial sentiment analyst. For the stock "${company}", classify each headline's sentiment toward the stock price on a scale of -1 (very bearish), 0 (neutral), to 1 (very bullish). Return ONLY JSON: {"scores":[number,...]} with one number per headline, same order.\n\nHeadlines:\n${capped.map((h, i) => `${i + 1}. ${h}`).join("\n")}`;
+  const prompt = `You are a financial sentiment analyst. For the stock "${company}", classify each headline's likely effect on the stock price from -1 (very bearish) to 1 (very bullish). Return only JSON in this exact shape: {"scores":[number,...]}. Include one score per headline in the same order.\n\nHeadlines:\n${capped.map((h, i) => `${i + 1}. ${h}`).join("\n")}`;
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: {
+      "Lovable-API-Key": apiKey,
+      "X-Lovable-AIG-SDK": "fetch",
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0,
-      response_format: { type: "json_object" },
+      model: "openai/gpt-6-astra",
+      input: prompt,
+      stream: true,
+      reasoning: { effort: "low", summary: "auto" },
+      text: {
+        format: {
+          type: "json_schema",
+          name: "sentiment_scores",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              scores: { type: "array", items: { type: "number", minimum: -1, maximum: 1 } },
+            },
+            required: ["scores"],
+            additionalProperties: false,
+          },
+        },
+      },
     }),
   });
-  if (!res.ok) throw new Error(`Groq error (${res.status}): ${await res.text()}`);
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content ?? "{}";
-  const parsed = JSON.parse(content);
-  const scores: number[] = Array.isArray(parsed.scores) ? parsed.scores.map((n: unknown) => Number(n) || 0) : [];
+  if (!res.ok) throw new Error(`Lovable AI error (${res.status}): ${await res.text()}`);
+
+  const stream = await res.text();
+  let content = "";
+  for (const line of stream.split("\n")) {
+    if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+    try {
+      const event = JSON.parse(line.slice(6));
+      if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+        content += event.delta;
+      }
+    } catch (_) { /* ignore non-JSON stream lines */ }
+  }
+  const parsed = JSON.parse(content || "{}");
+  const scores: number[] = Array.isArray(parsed.scores)
+    ? parsed.scores.slice(0, headlines.length).map((n: unknown) => Math.max(-1, Math.min(1, Number(n) || 0)))
+    : [];
+  if (scores.length !== headlines.length) throw new Error("Lovable AI returned an incomplete score set");
   const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
   // Map [-1,1] -> [0,100]
   const overall = Math.round((avg + 1) * 50);
@@ -168,7 +199,7 @@ serve(async (req) => {
       const ageMin = (Date.now() - new Date(cached.updated_at).getTime()) / 60000;
       const isEmpty = !Array.isArray(cached.articles) || cached.articles.length === 0;
       const ttl = isEmpty ? ZERO_ARTICLE_TTL_MINUTES : CACHE_TTL_MINUTES;
-      if (ageMin < ttl) {
+      if (ageMin < ttl && cached.scored_by !== "default") {
         return new Response(JSON.stringify({ success: true, cached: true, ...cached }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -186,18 +217,18 @@ serve(async (req) => {
       });
     }
 
-    const groqKey = Deno.env.get("GROQ_API_KEY");
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     let scores: number[] = [];
     let overall = 50;
-    let scoredBy: "groq" | "default" = "default";
-    if (groqKey) {
+    let scoredBy: "lovable-ai" | "default" = "default";
+    if (lovableApiKey) {
       try {
-        const result = await scoreWithGroq(groqKey, company, raw.map((a) => a.title));
+        const result = await scoreWithLovableAi(lovableApiKey, company, raw.map((a) => a.title));
         scores = result.scores;
         overall = result.overall;
-        scoredBy = "groq";
+        scoredBy = "lovable-ai";
       } catch (e) {
-        console.error("Groq scoring failed:", e);
+        console.error("Lovable AI scoring failed:", e);
       }
     }
 
