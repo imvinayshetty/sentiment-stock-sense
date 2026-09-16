@@ -14,10 +14,11 @@ const BasketAccuracy = () => {
           <h3 className="text-lg font-semibold text-foreground">Today's Basket Accuracy</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Set a total budget in Portfolio settings. Each day the app will log a forecast for the
-          10 stocks suggested for that budget at market open, then score them against the actual
-          close after 15:30 IST.
+          Set a total budget in Portfolio settings. Each morning the app picks up to 10 stocks that
+          have a track record of gaining between open and close and are forecast to rise today, then
+          checks after 15:30 IST whether a same-day trade would have made money.
         </p>
+
       </div>
     );
   }
