@@ -724,7 +724,8 @@ serve(async (req) => {
         .split(",")
         .map((s) => s.trim().toUpperCase())
         .filter((s) => s && isValidSymbol(s))
-        .slice(0, 10);
+        .slice(0, 30);
+
       if (!session || rawSymbols.length === 0) {
         return new Response(JSON.stringify({ success: false, error: "session and symbols are required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
