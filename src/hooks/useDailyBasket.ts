@@ -103,16 +103,19 @@ export interface BasketRow {
   close_price: number | null;
   correct: boolean | null;
 }
-export interface BasketAccuracyPayload {
+export interface BasketDaySummary {
   basketDate: string;
-  phase: "open" | "closed";
-  tradingToday: boolean;
   rows: BasketRow[];
   scored: number;
   correct: number;
   accuracy: number | null;
   mae: number | null;
   mape: number | null;
+}
+export interface BasketAccuracyPayload extends BasketDaySummary {
+  phase: "open" | "closed";
+  tradingToday: boolean;
+  history: BasketDaySummary[];
 }
 
 export function useBasketAccuracy(symbols: string[]) {
