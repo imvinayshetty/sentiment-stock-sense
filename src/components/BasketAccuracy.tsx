@@ -81,14 +81,27 @@ const BasketAccuracy = () => {
           <CalendarCheck className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold text-foreground">Today's Basket Accuracy</h3>
         </div>
-        <span className="rounded-full bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground">
-          {data?.basketDate ?? "—"} ·{" "}
-          {data && !data.tradingToday
-            ? "last trading day"
-            : data?.phase === "closed"
-              ? "session closed"
-              : "session open"}
-        </span>
+        <div className="flex items-center gap-2">
+          {data?.tradingToday && (
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={resetting}
+              className="flex items-center gap-1 rounded-full border border-border bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              {resetting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+              {resetting ? "Re-evaluating…" : "Reset"}
+            </button>
+          )}
+          <span className="rounded-full bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground">
+            {data?.basketDate ?? "—"} ·{" "}
+            {data && !data.tradingToday
+              ? "last trading day"
+              : data?.phase === "closed"
+                ? "session closed"
+                : "session open"}
+          </span>
+        </div>
       </div>
 
       {isLoading && rows.length === 0 ? (
