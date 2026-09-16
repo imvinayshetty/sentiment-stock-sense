@@ -34,12 +34,12 @@ const sentimentMeta: Record<
 };
 
 const NewsFeed = ({ symbol }: NewsFeedProps) => {
-  const { data, isLoading, isError } = useNewsSentiment(symbol);
+  const [sectionOpen, setSectionOpen] = useState(false);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  const { data, isLoading, isError } = useNewsSentiment(symbol, sectionOpen);
   const news = data?.articles ?? [];
   const isDefaultScoring = data?.scoredBy !== "groq";
-
-  const [sectionOpen, setSectionOpen] = useState(true);
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   const toggleItem = (i: number) => setOpenIndex((cur) => (cur === i ? null : i));
 
