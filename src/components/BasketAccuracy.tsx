@@ -112,45 +112,67 @@ const BasketAccuracy = () => {
 
           <div className="mt-4 space-y-2">
             {rows.map((r) => (
-              <div
-                key={r.symbol}
-                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-xs"
-              >
-                <span className="font-medium text-foreground">{r.symbol}</span>
-                <span className="font-mono text-muted-foreground">
-                  open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
-                  {r.close_price != null && (
-                    <>
-                      <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
-                      <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
-                        {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
-                        {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
-                      </span>
-                    </>
-                  )}
-                </span>
-
-                {r.close_price == null ? (
-                  <span className="flex items-center gap-1 text-chart-neutral">
-                    <Clock className="h-3.5 w-3.5" /> awaiting close
-                  </span>
-                ) : (
-                  <span className={`flex items-center gap-1 font-medium ${r.correct ? "text-chart-up" : "text-chart-down"}`}>
-                    {r.correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-                    {r.direction.toUpperCase()}
-                  </span>
-                )}
-              </div>
+              <RowLine key={r.symbol} r={r} />
             ))}
           </div>
         </>
       )}
 
+      {history.length > 0 && (
+        <div className="mt-6 border-t border-border pt-4">
+          <h4 className="mb-2 text-sm font-semibold text-foreground">Previous days</h4>
+          <div className="space-y-2">
+            {history.map((day) => {
+              const isOpen = openDay === day.basketDate;
+              return (
+                <div key={day.basketDate} className="rounded-lg border border-border bg-secondary/20">
+                  <button
+                    type="button"
+                    onClick={() => setOpenDay(isOpen ? null : day.basketDate)}
+                    className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 p-2 text-left text-xs"
+                  >
+                    <span className="flex items-center gap-1 font-medium text-foreground">
+                      {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                      {day.basketDate}
+                    </span>
+                    <span className="font-mono text-muted-foreground">
+                      {day.rows.length} stocks · {day.correct}/{day.scored} correct
+                      {day.mae != null && <> · MAE ₹{day.mae.toFixed(2)}</>}
+                      {day.mape != null && <> · {day.mape.toFixed(1)}% err</>}
+                    </span>
+                    <span
+                      className={`font-mono font-semibold ${
+                        day.accuracy == null
+                          ? "text-muted-foreground"
+                          : day.accuracy >= 55
+                            ? "text-chart-up"
+                            : "text-chart-down"
+                      }`}
+                    >
+                      {day.accuracy != null ? `${day.accuracy}%` : "—"}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="space-y-2 border-t border-border p-2">
+                      {day.rows.map((r) => (
+                        <RowLine key={r.symbol} r={r} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Each trading morning, stocks within your budget that regularly close above their opening price
-        and are forecast to rise today are locked in, then checked against the actual close after
-        15:30 IST. Not financial advice.
+        Each trading morning, up to 8 stocks within your budget that regularly close above their
+        opening price and are forecast to rise today are locked in, then checked against the actual
+        close after 15:30 IST. Every day is stored so you can compare accuracy across days. Not
+        financial advice.
       </p>
+
 
     </div>
   );
