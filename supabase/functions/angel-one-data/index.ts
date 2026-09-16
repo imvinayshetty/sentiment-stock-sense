@@ -900,6 +900,10 @@ serve(async (req) => {
         direction: r.direction,
         close_price: r.close_price != null ? Number(r.close_price) : null,
         correct: r.correct,
+        volatility_pct: r.volatility_pct != null ? Number(r.volatility_pct) : null,
+        avg_range_pct: r.avg_range_pct != null ? Number(r.avg_range_pct) : null,
+        risk_score: r.risk_score != null ? Number(r.risk_score) : null,
+        risk_label: r.risk_label ?? null,
       });
       const summarize = (list: any[]) => {
         const done = list.filter((r) => r.close_price != null);
