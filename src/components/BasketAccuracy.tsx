@@ -141,7 +141,7 @@ const BasketAccuracy = () => {
 
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-3">
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
               <div className={`font-mono text-2xl font-bold ${data?.accuracy != null && data.accuracy >= 55 ? "text-chart-up" : "text-chart-neutral"}`}>
                 {data?.accuracy != null ? `${data.accuracy}%` : "—"}
