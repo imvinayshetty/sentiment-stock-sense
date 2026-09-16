@@ -88,9 +88,16 @@ const BasketAccuracy = () => {
                 <span className="font-mono text-muted-foreground">
                   open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
                   {r.close_price != null && (
-                    <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
+                    <>
+                      <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
+                      <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
+                        {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
+                        {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
+                      </span>
+                    </>
                   )}
                 </span>
+
                 {r.close_price == null ? (
                   <span className="flex items-center gap-1 text-chart-neutral">
                     <Clock className="h-3.5 w-3.5" /> awaiting close
