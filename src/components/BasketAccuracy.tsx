@@ -205,6 +205,9 @@ const BasketAccuracy = () => {
                       {day.rows.length} stocks · {day.correct}/{day.scored} correct
                       {day.mae != null && <> · MAE ₹{day.mae.toFixed(2)}</>}
                       {day.mape != null && <> · {day.mape.toFixed(1)}% err</>}
+                      {day.avgRisk != null && (
+                        <span className={riskTone(day.avgRisk)}> · risk {day.avgRisk}</span>
+                      )}
                     </span>
                     <span
                       className={`font-mono font-semibold ${
