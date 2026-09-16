@@ -377,6 +377,26 @@ function isoToCloseMap(candles: any[]): Record<string, number> {
   return map;
 }
 
+/**
+ * Same-day open -> close move of the NIFTY 50 index, keyed by ISO date.
+ * Used as the market benchmark the daily basket is compared against.
+ */
+async function fetchMarketDayReturns(): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  try {
+    const chart = await fetchChart("^NSEI", "3mo", "1d");
+    for (const c of mapHistorical(chart) as any[]) {
+      const iso = String(c[0]).slice(0, 10);
+      const open = Number(c[1]);
+      const close = Number(c[4]);
+      if (open > 0 && close > 0) out[iso] = Number((((close - open) / open) * 100).toFixed(2));
+    }
+  } catch (e) {
+    console.error("Market benchmark fetch failed:", e);
+  }
+  return out;
+}
+
 // In-memory throttle: reconcile at most once per symbol per hour. Reconcile is
 // idempotent, so skipping recent runs only avoids redundant SELECT/UPDATE load
 // when users browse many symbols in a session. Cleared on cold start (fine).
