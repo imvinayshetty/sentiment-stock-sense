@@ -36,6 +36,21 @@ const BasketAccuracy = () => {
   const { candidates, budgetMax } = useDailyBasket();
   const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      await resetBasket(candidates);
+      await queryClient.invalidateQueries({ queryKey: ["basket-accuracy"] });
+      toast.success("Basket re-evaluated with the latest data.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Reset failed");
+    } finally {
+      setResetting(false);
+    }
+  };
 
   if (budgetMax == null) {
     return (
