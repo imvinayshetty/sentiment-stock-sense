@@ -199,19 +199,26 @@ const DemoTrading = () => {
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("demo_state").select("state").eq("session_id", sessionId.current).maybeSingle();
+        if (error) throw error;
         const s = data?.state as {
           trades?: Trade[];
           balance?: number;
           holdings?: Record<string, DemoHolding>;
         } | null;
         if (!cancelled && s) {
-          if (Array.isArray(s.trades)) setTrades(migrateLedger(s.trades, s.holdings));
-          if (typeof s.balance === "number") setBalance(s.balance);
+          const remoteTrades = Array.isArray(s.trades) ? migrateLedger(s.trades, s.holdings) : null;
+          // Keep whichever copy holds more history: a failed save in an earlier
+          // session must never let a stale backend row wipe local trades.
+          if (remoteTrades && remoteTrades.length >= tradesRef.current.length) {
+            setTrades(remoteTrades);
+            if (typeof s.balance === "number") setBalance(s.balance);
+          }
         }
       } catch (e) {
-        console.error("Demo portfolio load failed, using local cache:", e);
+        console.error("Demo portfolio load failed, keeping local copy:", e);
+        remoteLoadFailed.current = true;
       } finally {
         remoteLoaded.current = true;
       }
@@ -220,12 +227,15 @@ const DemoTrading = () => {
   }, []);
 
   // Persist to localStorage (fast cache) + backend (debounced, after remote load).
+  // Data is only ever cleared by the Reset button, never by a refresh or lock.
   useEffect(() => {
+    const isEmpty = trades.length === 0 && balance === 0;
+    if (isEmpty && !resetRequested.current) return; // don't overwrite saved data with a blank slate
     const payload = { trades, balance };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch { /* ignore quota / disabled storage */ }
-    if (!remoteLoaded.current) return;
+    if (!remoteLoaded.current || remoteLoadFailed.current) return;
     const t = setTimeout(() => {
       supabase
         .from("demo_state")
@@ -236,6 +246,7 @@ const DemoTrading = () => {
   }, [trades, balance]);
 
   const handleReset = async () => {
+    resetRequested.current = true;
     setTrades([]);
     setBalance(0);
     setSelected(null);
@@ -247,6 +258,7 @@ const DemoTrading = () => {
     } catch (e) {
       console.error("Demo portfolio reset (backend) failed:", e);
     }
+    resetRequested.current = false;
     toast({
       title: "Demo trading reset",
       description: "Balance, holdings and order history cleared.",
