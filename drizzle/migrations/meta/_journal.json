@@ -15,6 +15,13 @@
       "when": 1789533946856,
       "tag": "0001_add_basket_risk_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789548686302,
+      "tag": "0002_create_app_totp",
+      "breakpoints": true
     }
   ]
 }

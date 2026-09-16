@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.news-sentiment]
 verify_jwt = false
+
+[functions.totp-auth]
+verify_jwt = false
