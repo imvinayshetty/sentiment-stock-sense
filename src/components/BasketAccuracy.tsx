@@ -115,9 +115,11 @@ const BasketAccuracy = () => {
       )}
 
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Each trading day the stocks suggested for your total budget are locked in at the open with a
-        same-day price forecast, then scored against the actual close after 15:30 IST. Not financial advice.
+        Each trading morning, stocks within your budget that regularly close above their opening price
+        and are forecast to rise today are locked in, then checked against the actual close after
+        15:30 IST. Not financial advice.
       </p>
+
     </div>
   );
 };
