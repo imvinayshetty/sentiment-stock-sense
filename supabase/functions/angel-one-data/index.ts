@@ -914,12 +914,17 @@ serve(async (req) => {
           absErr += err;
           if (Number(r.close_price) > 0) pctErr += (err / Number(r.close_price)) * 100;
         }
+        const withRisk = list.filter((r) => r.risk_score != null);
+        const avgRisk = withRisk.length
+          ? Math.round(withRisk.reduce((a, r) => a + Number(r.risk_score), 0) / withRisk.length)
+          : null;
         return {
           scored: done.length,
           correct: correctCount,
           accuracy: done.length ? Math.round((correctCount / done.length) * 100) : null,
           mae: done.length ? Number((absErr / done.length).toFixed(2)) : null,
           mape: done.length ? Number((pctErr / done.length).toFixed(2)) : null,
+          avgRisk,
         };
       };
 
