@@ -152,3 +152,18 @@ export function useBasketAccuracy(symbols: string[]) {
     retry: 1,
   });
 }
+
+export async function resetBasket(symbols: string[]): Promise<void> {
+  const list = [...symbols].sort().join(",");
+  const params = new URLSearchParams({
+    action: "basket",
+    session: getBasketSessionId(),
+    symbols: list,
+    reset: "1",
+  });
+  const res = await fetch(`${PROJECT_URL}/functions/v1/angel-one-data?${params}`, {
+    headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY },
+  });
+  const result = await res.json();
+  if (!res.ok || !result.success) throw new Error(result.error ?? "Basket reset failed");
+}
