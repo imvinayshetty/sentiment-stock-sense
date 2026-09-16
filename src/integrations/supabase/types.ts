@@ -38,6 +38,33 @@ export type Database = {
         }
         Relationships: []
       }
+      app_totp: {
+        Row: {
+          confirmed: boolean
+          created_at: string
+          id: string
+          last_used_step: number | null
+          secret: string
+          updated_at: string
+        }
+        Insert: {
+          confirmed?: boolean
+          created_at?: string
+          id?: string
+          last_used_step?: number | null
+          secret: string
+          updated_at?: string
+        }
+        Update: {
+          confirmed?: boolean
+          created_at?: string
+          id?: string
+          last_used_step?: number | null
+          secret?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       basket_prediction: {
         Row: {
           avg_range_pct: number | null
