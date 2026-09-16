@@ -4,30 +4,56 @@ import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight,
 import { toast } from "sonner";
 import { useDailyBasket, useBasketAccuracy, resetBasket, type BasketRow } from "@/hooks/useDailyBasket";
 
-const RowLine = ({ r }: { r: BasketRow }) => (
-  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-xs">
-    <span className="font-medium text-foreground">{r.symbol}</span>
-    <span className="font-mono text-muted-foreground">
-      open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
-      {r.close_price != null && (
-        <>
-          <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
-          <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
-            {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
-            {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
-          </span>
-        </>
-      )}
+const riskTone = (score: number) =>
+  score <= 33 ? "text-chart-up" : score <= 66 ? "text-chart-neutral" : "text-chart-down";
+
+const RiskBadge = ({ r }: { r: BasketRow }) => {
+  if (r.risk_score == null) return null;
+  const label = r.risk_label ?? (r.risk_score <= 33 ? "low" : r.risk_score <= 66 ? "medium" : "high");
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+      <span className={`rounded-full bg-secondary/60 px-2 py-0.5 font-medium ${riskTone(r.risk_score)}`}>
+        risk {r.risk_score}/100 · {label}
+      </span>
+      <span className="text-muted-foreground">
+        {r.volatility_pct != null && <>swing ±{r.volatility_pct.toFixed(2)}%</>}
+        {r.avg_range_pct != null && <> · day range {r.avg_range_pct.toFixed(2)}%</>}
+      </span>
     </span>
-    {r.close_price == null ? (
-      <span className="flex items-center gap-1 text-chart-neutral">
-        <Clock className="h-3.5 w-3.5" /> awaiting close
+  );
+};
+
+const RowLine = ({ r }: { r: BasketRow }) => (
+  <div className="rounded-lg border border-border bg-secondary/30 p-2 text-xs">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <span className="font-medium text-foreground">{r.symbol}</span>
+      <span className="font-mono text-muted-foreground">
+        open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
+        {r.close_price != null && (
+          <>
+            <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
+            <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
+              {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
+              {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
+            </span>
+          </>
+        )}
       </span>
-    ) : (
-      <span className={`flex items-center gap-1 font-medium ${r.correct ? "text-chart-up" : "text-chart-down"}`}>
-        {r.correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-        {r.direction.toUpperCase()}
-      </span>
+      {r.close_price == null ? (
+        <span className="flex items-center gap-1 text-chart-neutral">
+          <Clock className="h-3.5 w-3.5" /> awaiting close
+        </span>
+      ) : (
+        <span className={`flex items-center gap-1 font-medium ${r.correct ? "text-chart-up" : "text-chart-down"}`}>
+          {r.correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+          {r.direction.toUpperCase()}
+        </span>
+      )}
+    </div>
+    {r.risk_score != null && (
+      <div className="mt-1">
+        <RiskBadge r={r} />
+      </div>
     )}
   </div>
 );
@@ -115,7 +141,7 @@ const BasketAccuracy = () => {
 
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-3">
             <div className="rounded-lg bg-secondary/50 p-3 text-center">
               <div className={`font-mono text-2xl font-bold ${data?.accuracy != null && data.accuracy >= 55 ? "text-chart-up" : "text-chart-neutral"}`}>
                 {data?.accuracy != null ? `${data.accuracy}%` : "—"}
@@ -137,6 +163,16 @@ const BasketAccuracy = () => {
                 {data?.mape != null ? `${data.mape.toFixed(1)}%` : "—"}
               </div>
               <div className="text-xs text-muted-foreground">Avg % error</div>
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-3 text-center">
+              <div
+                className={`font-mono text-2xl font-bold ${
+                  data?.avgRisk != null ? riskTone(data.avgRisk) : "text-foreground"
+                }`}
+              >
+                {data?.avgRisk != null ? data.avgRisk : "—"}
+              </div>
+              <div className="text-xs text-muted-foreground">Avg risk /100</div>
             </div>
           </div>
 
@@ -169,6 +205,9 @@ const BasketAccuracy = () => {
                       {day.rows.length} stocks · {day.correct}/{day.scored} correct
                       {day.mae != null && <> · MAE ₹{day.mae.toFixed(2)}</>}
                       {day.mape != null && <> · {day.mape.toFixed(1)}% err</>}
+                      {day.avgRisk != null && (
+                        <span className={riskTone(day.avgRisk)}> · risk {day.avgRisk}</span>
+                      )}
                     </span>
                     <span
                       className={`font-mono font-semibold ${
@@ -200,7 +239,10 @@ const BasketAccuracy = () => {
         Each trading morning, up to 8 stocks within your budget that regularly close above their
         opening price and are forecast to rise today are locked in, then checked against the actual
         close after 15:30 IST. Every day is stored so you can compare accuracy across days. Not
-        financial advice.
+        financial advice. Each pick also shows a 0-100 risk score built from how widely its
+        open-to-close move varies, how far it travels between its high and low, and how often the
+        day trade has failed — lower means steadier. Picks are ranked by expected gain per unit of
+        risk.
       </p>
 
 

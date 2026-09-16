@@ -102,6 +102,13 @@ export interface BasketRow {
   direction: string;
   close_price: number | null;
   correct: boolean | null;
+  /** Standard deviation of recent open->close moves, in %. */
+  volatility_pct: number | null;
+  /** Average intraday high-to-low travel, in % of the open. */
+  avg_range_pct: number | null;
+  /** 0-100 composite risk score. */
+  risk_score: number | null;
+  risk_label: string | null;
 }
 export interface BasketDaySummary {
   basketDate: string;
@@ -111,6 +118,8 @@ export interface BasketDaySummary {
   accuracy: number | null;
   mae: number | null;
   mape: number | null;
+  /** Average risk score across the day's basket. */
+  avgRisk: number | null;
 }
 export interface BasketAccuracyPayload extends BasketDaySummary {
   phase: "open" | "closed";
