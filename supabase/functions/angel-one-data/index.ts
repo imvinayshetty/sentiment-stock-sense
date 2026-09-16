@@ -810,7 +810,7 @@ serve(async (req) => {
         const picks = evaluated
           .filter(Boolean)
           .sort((a: any, b: any) => b.score - a.score)
-          .slice(0, 10)
+          .slice(0, 8)
           .map((p: any) => p.row);
         if (picks.length) {
           await supabase.from("basket_prediction")
