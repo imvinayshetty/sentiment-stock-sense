@@ -4,6 +4,25 @@ import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight,
 import { toast } from "sonner";
 import { useDailyBasket, useBasketAccuracy, resetBasket, type BasketRow } from "@/hooks/useDailyBasket";
 
+const riskTone = (score: number) =>
+  score <= 33 ? "text-chart-up" : score <= 66 ? "text-chart-neutral" : "text-chart-down";
+
+const RiskBadge = ({ r }: { r: BasketRow }) => {
+  if (r.risk_score == null) return null;
+  const label = r.risk_label ?? (r.risk_score <= 33 ? "low" : r.risk_score <= 66 ? "medium" : "high");
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+      <span className={`rounded-full bg-secondary/60 px-2 py-0.5 font-medium ${riskTone(r.risk_score)}`}>
+        risk {r.risk_score}/100 · {label}
+      </span>
+      <span className="text-muted-foreground">
+        {r.volatility_pct != null && <>swing ±{r.volatility_pct.toFixed(2)}%</>}
+        {r.avg_range_pct != null && <> · day range {r.avg_range_pct.toFixed(2)}%</>}
+      </span>
+    </span>
+  );
+};
+
 const RowLine = ({ r }: { r: BasketRow }) => (
   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-xs">
     <span className="font-medium text-foreground">{r.symbol}</span>
