@@ -164,6 +164,16 @@ const BasketAccuracy = () => {
               </div>
               <div className="text-xs text-muted-foreground">Avg % error</div>
             </div>
+            <div className="rounded-lg bg-secondary/50 p-3 text-center">
+              <div
+                className={`font-mono text-2xl font-bold ${
+                  data?.avgRisk != null ? riskTone(data.avgRisk) : "text-foreground"
+                }`}
+              >
+                {data?.avgRisk != null ? data.avgRisk : "—"}
+              </div>
+              <div className="text-xs text-muted-foreground">Avg risk /100</div>
+            </div>
           </div>
 
           <div className="mt-4 space-y-2">
