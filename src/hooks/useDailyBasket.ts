@@ -120,6 +120,14 @@ export interface BasketDaySummary {
   mape: number | null;
   /** Average risk score across the day's basket. */
   avgRisk: number | null;
+  /** Equal-weight open->close return the basket actually delivered, in %. */
+  basketReturnPct: number | null;
+  /** Stocks that closed above their open. */
+  winners: number | null;
+  /** NIFTY 50 same-day open->close move, in %. */
+  marketReturnPct: number | null;
+  /** Basket return minus market return, in %. */
+  alphaPct: number | null;
 }
 export interface BasketAccuracyPayload extends BasketDaySummary {
   phase: "open" | "closed";

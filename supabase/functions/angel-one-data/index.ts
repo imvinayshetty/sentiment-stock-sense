@@ -377,6 +377,26 @@ function isoToCloseMap(candles: any[]): Record<string, number> {
   return map;
 }
 
+/**
+ * Same-day open -> close move of the NIFTY 50 index, keyed by ISO date.
+ * Used as the market benchmark the daily basket is compared against.
+ */
+async function fetchMarketDayReturns(): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  try {
+    const chart = await fetchChart("^NSEI", "3mo", "1d");
+    for (const c of mapHistorical(chart) as any[]) {
+      const iso = String(c[0]).slice(0, 10);
+      const open = Number(c[1]);
+      const close = Number(c[4]);
+      if (open > 0 && close > 0) out[iso] = Number((((close - open) / open) * 100).toFixed(2));
+    }
+  } catch (e) {
+    console.error("Market benchmark fetch failed:", e);
+  }
+  return out;
+}
+
 // In-memory throttle: reconcile at most once per symbol per hour. Reconcile is
 // idempotent, so skipping recent runs only avoids redundant SELECT/UPDATE load
 // when users browse many symbols in a session. Cleared on cold start (fine).
@@ -914,6 +934,13 @@ serve(async (req) => {
           absErr += err;
           if (Number(r.close_price) > 0) pctErr += (err / Number(r.close_price)) * 100;
         }
+        // Equal-weight same-day return the basket actually delivered.
+        let retSum = 0;
+        for (const r of done) {
+          const base = Number(r.base_price);
+          if (base > 0) retSum += ((Number(r.close_price) - base) / base) * 100;
+        }
+        const winners = done.filter((r) => Number(r.close_price) > Number(r.base_price)).length;
         const withRisk = list.filter((r) => r.risk_score != null);
         const avgRisk = withRisk.length
           ? Math.round(withRisk.reduce((a, r) => a + Number(r.risk_score), 0) / withRisk.length)
@@ -925,6 +952,8 @@ serve(async (req) => {
           mae: done.length ? Number((absErr / done.length).toFixed(2)) : null,
           mape: done.length ? Number((pctErr / done.length).toFixed(2)) : null,
           avgRisk,
+          basketReturnPct: done.length ? Number((retSum / done.length).toFixed(2)) : null,
+          winners: done.length ? winners : null,
         };
       };
 
@@ -965,10 +994,28 @@ serve(async (req) => {
         list.push(mapRow(r));
         grouped.set(r.basket_date, list);
       }
+      // NIFTY 50 same-day move: the market benchmark each basket is measured against.
+      const marketReturns = await fetchMarketDayReturns();
+      const withBenchmark = (date: string, summary: any) => {
+        const market = marketReturns[date] ?? null;
+        return {
+          ...summary,
+          marketReturnPct: market,
+          alphaPct:
+            summary.basketReturnPct != null && market != null
+              ? Number((summary.basketReturnPct - market).toFixed(2))
+              : null,
+        };
+      };
+
       const history = [...grouped.entries()]
         .sort((a, b) => (a[0] < b[0] ? 1 : -1))
         .slice(0, 30)
-        .map(([date, list]) => ({ basketDate: date, rows: list, ...summarize(list) }));
+        .map(([date, list]) => ({
+          basketDate: date,
+          rows: list,
+          ...withBenchmark(date, summarize(list)),
+        }));
 
       const todaysRows = rows.map(mapRow);
       return new Response(JSON.stringify({
@@ -977,7 +1024,7 @@ serve(async (req) => {
         tradingToday,
         phase: sessionEnded ? "closed" : "open",
         rows: todaysRows,
-        ...summarize(todaysRows),
+        ...withBenchmark(basketDate, summarize(todaysRows)),
         history,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }

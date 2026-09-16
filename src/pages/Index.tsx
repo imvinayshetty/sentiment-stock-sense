@@ -11,6 +11,7 @@ import SentimentGauge from "@/components/SentimentGauge";
 import PriceTarget from "@/components/PriceTarget";
 import NewsFeed from "@/components/NewsFeed";
 import BasketAccuracy from "@/components/BasketAccuracy";
+import BasketComparison from "@/components/BasketComparison";
 import DemoTrading from "@/components/DemoTrading";
 import { useStockQuotes, useForecast, useNewsSentiment } from "@/hooks/useAngelOneData";
 
@@ -117,6 +118,12 @@ const Index = () => {
         <div className="animate-fade-in-up" style={{ animationDelay: "375ms" }}>
           <BasketAccuracy />
         </div>
+
+        {/* Basket vs Market Comparison */}
+        <div className="animate-fade-in-up" style={{ animationDelay: "385ms" }}>
+          <BasketComparison />
+        </div>
+
 
 
         {/* Demo Trading */}
