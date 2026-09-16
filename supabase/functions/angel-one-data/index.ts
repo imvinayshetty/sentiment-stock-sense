@@ -994,10 +994,28 @@ serve(async (req) => {
         list.push(mapRow(r));
         grouped.set(r.basket_date, list);
       }
+      // NIFTY 50 same-day move: the market benchmark each basket is measured against.
+      const marketReturns = await fetchMarketDayReturns();
+      const withBenchmark = (date: string, summary: any) => {
+        const market = marketReturns[date] ?? null;
+        return {
+          ...summary,
+          marketReturnPct: market,
+          alphaPct:
+            summary.basketReturnPct != null && market != null
+              ? Number((summary.basketReturnPct - market).toFixed(2))
+              : null,
+        };
+      };
+
       const history = [...grouped.entries()]
         .sort((a, b) => (a[0] < b[0] ? 1 : -1))
         .slice(0, 30)
-        .map(([date, list]) => ({ basketDate: date, rows: list, ...summarize(list) }));
+        .map(([date, list]) => ({
+          basketDate: date,
+          rows: list,
+          ...withBenchmark(date, summarize(list)),
+        }));
 
       const todaysRows = rows.map(mapRow);
       return new Response(JSON.stringify({
@@ -1006,7 +1024,7 @@ serve(async (req) => {
         tradingToday,
         phase: sessionEnded ? "closed" : "open",
         rows: todaysRows,
-        ...summarize(todaysRows),
+        ...withBenchmark(basketDate, summarize(todaysRows)),
         history,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
