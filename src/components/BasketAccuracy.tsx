@@ -1,10 +1,39 @@
-import { CalendarCheck, CheckCircle2, XCircle, Clock } from "lucide-react";
-import { useDailyBasket, useBasketAccuracy } from "@/hooks/useDailyBasket";
+import { useState } from "react";
+import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
+import { useDailyBasket, useBasketAccuracy, type BasketRow } from "@/hooks/useDailyBasket";
+
+const RowLine = ({ r }: { r: BasketRow }) => (
+  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-xs">
+    <span className="font-medium text-foreground">{r.symbol}</span>
+    <span className="font-mono text-muted-foreground">
+      open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
+      {r.close_price != null && (
+        <>
+          <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
+          <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
+            {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
+            {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
+          </span>
+        </>
+      )}
+    </span>
+    {r.close_price == null ? (
+      <span className="flex items-center gap-1 text-chart-neutral">
+        <Clock className="h-3.5 w-3.5" /> awaiting close
+      </span>
+    ) : (
+      <span className={`flex items-center gap-1 font-medium ${r.correct ? "text-chart-up" : "text-chart-down"}`}>
+        {r.correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+        {r.direction.toUpperCase()}
+      </span>
+    )}
+  </div>
+);
 
 const BasketAccuracy = () => {
   const { candidates, budgetMax } = useDailyBasket();
   const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
-
+  const [openDay, setOpenDay] = useState<string | null>(null);
 
   if (budgetMax == null) {
     return (
@@ -14,9 +43,10 @@ const BasketAccuracy = () => {
           <h3 className="text-lg font-semibold text-foreground">Today's Basket Accuracy</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Set a total budget in Portfolio settings. Each morning the app picks up to 10 stocks that
+          Set a total budget in Portfolio settings. Each morning the app picks up to 8 stocks that
           have a track record of gaining between open and close and are forecast to rise today, then
-          checks after 15:30 IST whether a same-day trade would have made money.
+          checks after 15:30 IST whether a same-day trade would have made money. Every day is saved
+          so you can compare accuracy across days.
         </p>
 
       </div>
@@ -24,6 +54,8 @@ const BasketAccuracy = () => {
   }
 
   const rows = data?.rows ?? [];
+  const history = data?.history ?? [];
+
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 card-glow">
