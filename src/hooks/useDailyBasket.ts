@@ -83,7 +83,15 @@ export function useDailyBasket() {
     return { topBuy: picks, suggestedQty: qty };
   }, [ranked, budgetMax]);
 
-  return { stocks, ranked, topBuy, suggestedQty, budgetMax, isLoading, marketStatus: quotes?.marketStatus };
+  // Wider candidate pool sent to the daily-accuracy backend, which keeps only the
+  // stocks whose past same-day behaviour plus today's forecast point to a profit.
+  const candidates = useMemo(() => {
+    const affordable = budgetMax == null ? ranked : ranked.filter((s) => s.price > 0 && s.price <= budgetMax);
+    return affordable.slice(0, 25).map((s) => s.symbol);
+  }, [ranked, budgetMax]);
+
+  return { stocks, ranked, topBuy, suggestedQty, candidates, budgetMax, isLoading, marketStatus: quotes?.marketStatus };
+
 }
 
 // ---------- Daily basket prediction accuracy ----------

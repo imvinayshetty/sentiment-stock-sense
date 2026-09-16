@@ -724,7 +724,8 @@ serve(async (req) => {
         .split(",")
         .map((s) => s.trim().toUpperCase())
         .filter((s) => s && isValidSymbol(s))
-        .slice(0, 10);
+        .slice(0, 30);
+
       if (!session || rawSymbols.length === 0) {
         return new Response(JSON.stringify({ success: false, error: "session and symbols are required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -750,12 +751,14 @@ serve(async (req) => {
 
       const { data: existing } = await supabase
         .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);
-      const known = new Set((existing ?? []).map((r: any) => r.symbol));
-      const missing = tradingToday ? rawSymbols.filter((s) => !known.has(s)) : [];
+      // The basket is locked in once per trading day: only pick stocks when the
+      // day has nothing recorded yet.
+      const needsPick = tradingToday && (existing ?? []).length === 0;
 
-      // Record the open snapshot for stocks not yet logged today.
-      if (missing.length) {
-        const inserts = await fetchInBatches(missing, 5, async (sym) => {
+      if (needsPick) {
+        // Study each candidate's recent day-trade behaviour (open -> close) and
+        // only keep the ones a same-day trade has historically paid off on.
+        const evaluated = await fetchInBatches(rawSymbols, 5, async (sym) => {
           try {
             const info = resolveSymbolInfo(sym);
             const chart = await fetchChart(info.yahooSymbol, "3mo", "1d");
@@ -766,25 +769,55 @@ serve(async (req) => {
             const quote = mapQuote(sym, info, chart);
             const base = Number(quote?.open ?? result.lastPrice);
             const predicted = result.forecast[0].forecast;
+            if (!(base > 0)) return null;
+
+            // Intraday history: share of recent days that closed above their open
+            // and the average same-day gain.
+            const intraday = candles
+              .slice(-40)
+              .map((c: any[]) => {
+                const o = Number(c[1]);
+                const cl = Number(c[4]);
+                return o > 0 ? ((cl - o) / o) * 100 : null;
+              })
+              .filter((v): v is number => v != null);
+            if (intraday.length < 15) return null;
+            const wins = intraday.filter((v) => v > 0).length;
+            const winRate = wins / intraday.length;
+            const avgDayGain = intraday.reduce((a, b) => a + b, 0) / intraday.length;
+            const expectedGainPct = ((predicted - base) / base) * 100;
+
+            // Only same-day-profitable candidates: a positive forecast for today,
+            // a coin-flip-or-better intraday record, and a non-negative average.
+            if (expectedGainPct <= 0 || winRate < 0.5 || avgDayGain <= 0) return null;
+
             return {
-              session_id: session,
-              basket_date: basketDate,
-              symbol: sym,
-              base_price: base,
-              predicted_close: predicted,
-              direction: predicted >= base ? "up" : "down",
+              row: {
+                session_id: session,
+                basket_date: basketDate,
+                symbol: sym,
+                base_price: base,
+                predicted_close: predicted,
+                direction: "up",
+              },
+              score: expectedGainPct * winRate + avgDayGain * 0.5,
             };
           } catch (e) {
             console.error(`Basket snapshot failed for ${sym}:`, e);
             return null;
           }
         });
-        const rows = inserts.filter(Boolean);
-        if (rows.length) {
+        const picks = evaluated
+          .filter(Boolean)
+          .sort((a: any, b: any) => b.score - a.score)
+          .slice(0, 10)
+          .map((p: any) => p.row);
+        if (picks.length) {
           await supabase.from("basket_prediction")
-            .upsert(rows, { onConflict: "session_id,basket_date,symbol", ignoreDuplicates: true });
+            .upsert(picks, { onConflict: "session_id,basket_date,symbol", ignoreDuplicates: true });
         }
       }
+
 
       const { data: dayRows } = await supabase
         .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);

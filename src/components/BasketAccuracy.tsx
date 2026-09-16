@@ -2,9 +2,9 @@ import { CalendarCheck, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useDailyBasket, useBasketAccuracy } from "@/hooks/useDailyBasket";
 
 const BasketAccuracy = () => {
-  const { topBuy, budgetMax } = useDailyBasket();
-  const symbols = topBuy.map((s) => s.symbol);
-  const { data, isLoading } = useBasketAccuracy(budgetMax != null ? symbols : []);
+  const { candidates, budgetMax } = useDailyBasket();
+  const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
+
 
   if (budgetMax == null) {
     return (
@@ -14,10 +14,11 @@ const BasketAccuracy = () => {
           <h3 className="text-lg font-semibold text-foreground">Today's Basket Accuracy</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Set a total budget in Portfolio settings. Each day the app will log a forecast for the
-          10 stocks suggested for that budget at market open, then score them against the actual
-          close after 15:30 IST.
+          Set a total budget in Portfolio settings. Each morning the app picks up to 10 stocks that
+          have a track record of gaining between open and close and are forecast to rise today, then
+          checks after 15:30 IST whether a same-day trade would have made money.
         </p>
+
       </div>
     );
   }
@@ -47,8 +48,9 @@ const BasketAccuracy = () => {
         <p className="text-sm text-muted-foreground">
           {data && !data.tradingToday
             ? "The market is shut today, so no basket was logged. The next one is recorded at the next market open."
-            : "No stocks fit today's budget yet, so nothing has been logged for today."}
+            : "No stock within your budget looks likely to make a same-day profit today, so nothing was logged."}
         </p>
+
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
@@ -86,9 +88,16 @@ const BasketAccuracy = () => {
                 <span className="font-mono text-muted-foreground">
                   open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
                   {r.close_price != null && (
-                    <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
+                    <>
+                      <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
+                      <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
+                        {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
+                        {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
+                      </span>
+                    </>
                   )}
                 </span>
+
                 {r.close_price == null ? (
                   <span className="flex items-center gap-1 text-chart-neutral">
                     <Clock className="h-3.5 w-3.5" /> awaiting close
@@ -106,9 +115,11 @@ const BasketAccuracy = () => {
       )}
 
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Each trading day the stocks suggested for your total budget are locked in at the open with a
-        same-day price forecast, then scored against the actual close after 15:30 IST. Not financial advice.
+        Each trading morning, stocks within your budget that regularly close above their opening price
+        and are forecast to rise today are locked in, then checked against the actual close after
+        15:30 IST. Not financial advice.
       </p>
+
     </div>
   );
 };
