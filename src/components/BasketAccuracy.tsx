@@ -24,29 +24,36 @@ const RiskBadge = ({ r }: { r: BasketRow }) => {
 };
 
 const RowLine = ({ r }: { r: BasketRow }) => (
-  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-xs">
-    <span className="font-medium text-foreground">{r.symbol}</span>
-    <span className="font-mono text-muted-foreground">
-      open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
-      {r.close_price != null && (
-        <>
-          <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
-          <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
-            {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
-            {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
-          </span>
-        </>
+  <div className="rounded-lg border border-border bg-secondary/30 p-2 text-xs">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <span className="font-medium text-foreground">{r.symbol}</span>
+      <span className="font-mono text-muted-foreground">
+        open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
+        {r.close_price != null && (
+          <>
+            <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
+            <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
+              {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
+              {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
+            </span>
+          </>
+        )}
+      </span>
+      {r.close_price == null ? (
+        <span className="flex items-center gap-1 text-chart-neutral">
+          <Clock className="h-3.5 w-3.5" /> awaiting close
+        </span>
+      ) : (
+        <span className={`flex items-center gap-1 font-medium ${r.correct ? "text-chart-up" : "text-chart-down"}`}>
+          {r.correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+          {r.direction.toUpperCase()}
+        </span>
       )}
-    </span>
-    {r.close_price == null ? (
-      <span className="flex items-center gap-1 text-chart-neutral">
-        <Clock className="h-3.5 w-3.5" /> awaiting close
-      </span>
-    ) : (
-      <span className={`flex items-center gap-1 font-medium ${r.correct ? "text-chart-up" : "text-chart-down"}`}>
-        {r.correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-        {r.direction.toUpperCase()}
-      </span>
+    </div>
+    {r.risk_score != null && (
+      <div className="mt-1">
+        <RiskBadge r={r} />
+      </div>
     )}
   </div>
 );
