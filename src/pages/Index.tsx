@@ -125,6 +125,12 @@ const Index = () => {
           <BasketComparison />
         </div>
 
+        {/* Two-day side-by-side comparison */}
+        <div className="animate-fade-in-up" style={{ animationDelay: "390ms" }}>
+          <BasketDayCompare />
+        </div>
+
+
 
 
         {/* Demo Trading */}
