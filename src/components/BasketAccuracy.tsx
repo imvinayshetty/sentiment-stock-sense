@@ -2,9 +2,9 @@ import { CalendarCheck, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useDailyBasket, useBasketAccuracy } from "@/hooks/useDailyBasket";
 
 const BasketAccuracy = () => {
-  const { topBuy, budgetMax } = useDailyBasket();
-  const symbols = topBuy.map((s) => s.symbol);
-  const { data, isLoading } = useBasketAccuracy(budgetMax != null ? symbols : []);
+  const { candidates, budgetMax } = useDailyBasket();
+  const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
+
 
   if (budgetMax == null) {
     return (
