@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
-import { useDailyBasket, useBasketAccuracy, type BasketRow } from "@/hooks/useDailyBasket";
+import { useQueryClient } from "@tanstack/react-query";
+import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, RotateCcw, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { useDailyBasket, useBasketAccuracy, resetBasket, type BasketRow } from "@/hooks/useDailyBasket";
 
 const RowLine = ({ r }: { r: BasketRow }) => (
   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-xs">
@@ -34,6 +36,21 @@ const BasketAccuracy = () => {
   const { candidates, budgetMax } = useDailyBasket();
   const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      await resetBasket(candidates);
+      await queryClient.invalidateQueries({ queryKey: ["basket-accuracy"] });
+      toast.success("Basket re-evaluated with the latest data.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Reset failed");
+    } finally {
+      setResetting(false);
+    }
+  };
 
   if (budgetMax == null) {
     return (
@@ -64,14 +81,27 @@ const BasketAccuracy = () => {
           <CalendarCheck className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold text-foreground">Today's Basket Accuracy</h3>
         </div>
-        <span className="rounded-full bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground">
-          {data?.basketDate ?? "—"} ·{" "}
-          {data && !data.tradingToday
-            ? "last trading day"
-            : data?.phase === "closed"
-              ? "session closed"
-              : "session open"}
-        </span>
+        <div className="flex items-center gap-2">
+          {data?.tradingToday && (
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={resetting}
+              className="flex items-center gap-1 rounded-full border border-border bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              {resetting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+              {resetting ? "Re-evaluating…" : "Reset"}
+            </button>
+          )}
+          <span className="rounded-full bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground">
+            {data?.basketDate ?? "—"} ·{" "}
+            {data && !data.tradingToday
+              ? "last trading day"
+              : data?.phase === "closed"
+                ? "session closed"
+                : "session open"}
+          </span>
+        </div>
       </div>
 
       {isLoading && rows.length === 0 ? (
