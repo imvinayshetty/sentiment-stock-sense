@@ -952,6 +952,8 @@ serve(async (req) => {
           mae: done.length ? Number((absErr / done.length).toFixed(2)) : null,
           mape: done.length ? Number((pctErr / done.length).toFixed(2)) : null,
           avgRisk,
+          basketReturnPct: done.length ? Number((retSum / done.length).toFixed(2)) : null,
+          winners: done.length ? winners : null,
         };
       };
 
