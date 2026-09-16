@@ -118,6 +118,8 @@ export interface BasketDaySummary {
   accuracy: number | null;
   mae: number | null;
   mape: number | null;
+  /** Average risk score across the day's basket. */
+  avgRisk: number | null;
 }
 export interface BasketAccuracyPayload extends BasketDaySummary {
   phase: "open" | "closed";
