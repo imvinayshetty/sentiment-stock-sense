@@ -48,8 +48,9 @@ const BasketAccuracy = () => {
         <p className="text-sm text-muted-foreground">
           {data && !data.tradingToday
             ? "The market is shut today, so no basket was logged. The next one is recorded at the next market open."
-            : "No stocks fit today's budget yet, so nothing has been logged for today."}
+            : "No stock within your budget looks likely to make a same-day profit today, so nothing was logged."}
         </p>
+
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
