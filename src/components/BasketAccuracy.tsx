@@ -239,7 +239,10 @@ const BasketAccuracy = () => {
         Each trading morning, up to 8 stocks within your budget that regularly close above their
         opening price and are forecast to rise today are locked in, then checked against the actual
         close after 15:30 IST. Every day is stored so you can compare accuracy across days. Not
-        financial advice.
+        financial advice. Each pick also shows a 0-100 risk score built from how widely its
+        open-to-close move varies, how far it travels between its high and low, and how often the
+        day trade has failed — lower means steadier. Picks are ranked by expected gain per unit of
+        risk.
       </p>
 
 
