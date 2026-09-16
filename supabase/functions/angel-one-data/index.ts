@@ -793,6 +793,38 @@ serve(async (req) => {
             const avgDayGain = intraday.reduce((a, b) => a + b, 0) / intraday.length;
             const expectedGainPct = ((predicted - base) / base) * 100;
 
+            // ---- Risk profile: how much the price swings day to day ----------
+            // Volatility = standard deviation of the recent same-day moves.
+            const mean = avgDayGain;
+            const variance =
+              intraday.reduce((a, v) => a + (v - mean) ** 2, 0) / intraday.length;
+            const volatilityPct = Math.sqrt(variance);
+            // Average intraday travel (high -> low as a share of the open).
+            const ranges = candles
+              .slice(-40)
+              .map((c: any[]) => {
+                const o = Number(c[1]);
+                const hi = Number(c[2]);
+                const lo = Number(c[3]);
+                return o > 0 && hi > 0 && lo > 0 ? ((hi - lo) / o) * 100 : null;
+              })
+              .filter((v): v is number => v != null);
+            const avgRangePct = ranges.length
+              ? ranges.reduce((a, b) => a + b, 0) / ranges.length
+              : volatilityPct;
+            // 0-100 risk score: swing size, intraday travel, and how often the
+            // day-trade has failed historically.
+            const riskScore = Math.max(
+              1,
+              Math.min(
+                100,
+                Math.round(
+                  volatilityPct * 18 + avgRangePct * 8 + (1 - winRate) * 30,
+                ),
+              ),
+            );
+            const riskLabel = riskScore <= 33 ? "low" : riskScore <= 66 ? "medium" : "high";
+
             // Only same-day-profitable candidates: a positive forecast for today,
             // a coin-flip-or-better intraday record, and a non-negative average.
             if (expectedGainPct <= 0 || winRate < 0.5 || avgDayGain <= 0) return null;
@@ -805,8 +837,15 @@ serve(async (req) => {
                 base_price: base,
                 predicted_close: predicted,
                 direction: "up",
+                volatility_pct: Number(volatilityPct.toFixed(2)),
+                avg_range_pct: Number(avgRangePct.toFixed(2)),
+                risk_score: riskScore,
+                risk_label: riskLabel,
               },
-              score: expectedGainPct * winRate + avgDayGain * 0.5,
+              // Prefer the strongest expected gain per unit of risk taken.
+              score:
+                (expectedGainPct * winRate + avgDayGain * 0.5) /
+                (1 + riskScore / 100),
             };
           } catch (e) {
             console.error(`Basket snapshot failed for ${sym}:`, e);
