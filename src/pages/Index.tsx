@@ -12,6 +12,7 @@ import PriceTarget from "@/components/PriceTarget";
 import NewsFeed from "@/components/NewsFeed";
 import BasketAccuracy from "@/components/BasketAccuracy";
 import BasketComparison from "@/components/BasketComparison";
+import BasketDayCompare from "@/components/BasketDayCompare";
 import DemoTrading from "@/components/DemoTrading";
 import { useStockQuotes, useForecast, useNewsSentiment } from "@/hooks/useAngelOneData";
 
