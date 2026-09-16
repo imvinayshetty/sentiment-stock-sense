@@ -40,6 +40,7 @@ export type Database = {
       }
       basket_prediction: {
         Row: {
+          avg_range_pct: number | null
           base_price: number
           basket_date: string
           close_price: number | null
@@ -48,11 +49,15 @@ export type Database = {
           direction: string
           id: string
           predicted_close: number
+          risk_label: string | null
+          risk_score: number | null
           scored_at: string | null
           session_id: string
           symbol: string
+          volatility_pct: number | null
         }
         Insert: {
+          avg_range_pct?: number | null
           base_price: number
           basket_date: string
           close_price?: number | null
@@ -61,11 +66,15 @@ export type Database = {
           direction: string
           id?: string
           predicted_close: number
+          risk_label?: string | null
+          risk_score?: number | null
           scored_at?: string | null
           session_id: string
           symbol: string
+          volatility_pct?: number | null
         }
         Update: {
+          avg_range_pct?: number | null
           base_price?: number
           basket_date?: string
           close_price?: number | null
@@ -74,9 +83,12 @@ export type Database = {
           direction?: string
           id?: string
           predicted_close?: number
+          risk_label?: string | null
+          risk_score?: number | null
           scored_at?: string | null
           session_id?: string
           symbol?: string
+          volatility_pct?: number | null
         }
         Relationships: []
       }
