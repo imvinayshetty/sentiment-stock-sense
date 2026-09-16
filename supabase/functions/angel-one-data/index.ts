@@ -848,33 +848,83 @@ serve(async (req) => {
         rows = rows.map((r: any) => (byId.has(r.id) ? { ...r, ...byId.get(r.id) } : r));
       }
 
-      const done = rows.filter((r: any) => r.close_price != null);
-      const correctCount = done.filter((r: any) => r.correct).length;
-      let absErr = 0, pctErr = 0;
-      for (const r of done) {
-        const err = Math.abs(Number(r.predicted_close) - Number(r.close_price));
-        absErr += err;
-        if (Number(r.close_price) > 0) pctErr += (err / Number(r.close_price)) * 100;
-      }
+      const mapRow = (r: any) => ({
+        symbol: r.symbol,
+        base_price: Number(r.base_price),
+        predicted_close: Number(r.predicted_close),
+        direction: r.direction,
+        close_price: r.close_price != null ? Number(r.close_price) : null,
+        correct: r.correct,
+      });
+      const summarize = (list: any[]) => {
+        const done = list.filter((r) => r.close_price != null);
+        const correctCount = done.filter((r) => r.correct).length;
+        let absErr = 0, pctErr = 0;
+        for (const r of done) {
+          const err = Math.abs(Number(r.predicted_close) - Number(r.close_price));
+          absErr += err;
+          if (Number(r.close_price) > 0) pctErr += (err / Number(r.close_price)) * 100;
+        }
+        return {
+          scored: done.length,
+          correct: correctCount,
+          accuracy: done.length ? Math.round((correctCount / done.length) * 100) : null,
+          mae: done.length ? Number((absErr / done.length).toFixed(2)) : null,
+          mape: done.length ? Number((pctErr / done.length).toFixed(2)) : null,
+        };
+      };
 
+      // ---- Past days: score anything still open, then group day by day -------
+      const { data: pastRows } = await supabase
+        .from("basket_prediction").select("*")
+        .eq("session_id", session)
+        .lt("basket_date", basketDate)
+        .order("basket_date", { ascending: false })
+        .limit(400);
+      let past = pastRows ?? [];
+      const pastUnscored = past.filter((r: any) => r.close_price == null);
+      if (pastUnscored.length) {
+        const scoredPast = await fetchInBatches(pastUnscored.slice(0, 30), 5, async (row: any) => {
+          try {
+            const info = resolveSymbolInfo(row.symbol);
+            const chart = await fetchChart(info.yahooSymbol, "3mo", "1d");
+            const closeByDate = isoToCloseMap(mapHistorical(chart));
+            const actual = closeByDate[row.basket_date];
+            if (!actual) return null;
+            const wentUp = actual > Number(row.base_price);
+            const correct = (row.direction === "up") === wentUp;
+            await supabase.from("basket_prediction")
+              .update({ close_price: actual, correct, scored_at: new Date().toISOString() })
+              .eq("id", row.id);
+            return { id: row.id, close_price: actual, correct };
+          } catch (e) {
+            console.error(`Basket backfill failed for ${row.symbol}:`, e);
+            return null;
+          }
+        });
+        const byId = new Map(scoredPast.filter(Boolean).map((s: any) => [s.id, s]));
+        past = past.map((r: any) => (byId.has(r.id) ? { ...r, ...byId.get(r.id) } : r));
+      }
+      const grouped = new Map<string, any[]>();
+      for (const r of past) {
+        const list = grouped.get(r.basket_date) ?? [];
+        list.push(mapRow(r));
+        grouped.set(r.basket_date, list);
+      }
+      const history = [...grouped.entries()]
+        .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+        .slice(0, 30)
+        .map(([date, list]) => ({ basketDate: date, rows: list, ...summarize(list) }));
+
+      const todaysRows = rows.map(mapRow);
       return new Response(JSON.stringify({
         success: true,
         basketDate,
         tradingToday,
         phase: sessionEnded ? "closed" : "open",
-        rows: rows.map((r: any) => ({
-          symbol: r.symbol,
-          base_price: Number(r.base_price),
-          predicted_close: Number(r.predicted_close),
-          direction: r.direction,
-          close_price: r.close_price != null ? Number(r.close_price) : null,
-          correct: r.correct,
-        })),
-        scored: done.length,
-        correct: correctCount,
-        accuracy: done.length ? Math.round((correctCount / done.length) * 100) : null,
-        mae: done.length ? Number((absErr / done.length).toFixed(2)) : null,
-        mape: done.length ? Number((pctErr / done.length).toFixed(2)) : null,
+        rows: todaysRows,
+        ...summarize(todaysRows),
+        history,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
