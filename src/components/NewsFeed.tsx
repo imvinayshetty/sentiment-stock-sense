@@ -37,6 +37,12 @@ const NewsFeed = ({ symbol }: NewsFeedProps) => {
   const [sectionOpen, setSectionOpen] = useState(false);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
+  // Collapse again (and stop fetching) whenever a different stock is selected.
+  useEffect(() => {
+    setSectionOpen(false);
+    setOpenIndex(null);
+  }, [symbol]);
+
   const { data, isLoading, isError } = useNewsSentiment(symbol, sectionOpen);
   const news = data?.articles ?? [];
   const isDefaultScoring = data?.scoredBy !== "groq";
