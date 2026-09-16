@@ -182,6 +182,11 @@ const DemoTrading = () => {
 
   const sessionId = useRef(getSessionId());
   const remoteLoaded = useRef(false);
+  // True when the backend read failed: never write in that case, otherwise an
+  // empty local state could overwrite a good saved portfolio.
+  const remoteLoadFailed = useRef(false);
+  // Set only by the Reset button — the one case where clearing saved data is intended.
+  const resetRequested = useRef(false);
   // Latest ledger for callbacks that must not close over a stale array.
   const tradesRef = useRef(trades);
   useEffect(() => {
