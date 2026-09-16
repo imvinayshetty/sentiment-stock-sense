@@ -934,6 +934,13 @@ serve(async (req) => {
           absErr += err;
           if (Number(r.close_price) > 0) pctErr += (err / Number(r.close_price)) * 100;
         }
+        // Equal-weight same-day return the basket actually delivered.
+        let retSum = 0;
+        for (const r of done) {
+          const base = Number(r.base_price);
+          if (base > 0) retSum += ((Number(r.close_price) - base) / base) * 100;
+        }
+        const winners = done.filter((r) => Number(r.close_price) > Number(r.base_price)).length;
         const withRisk = list.filter((r) => r.risk_score != null);
         const avgRisk = withRisk.length
           ? Math.round(withRisk.reduce((a, r) => a + Number(r.risk_score), 0) / withRisk.length)
