@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useDailyBasket, useBasketAccuracy, resetBasket, type BasketRow } from "@/hooks/useDailyBasket";
+import type { StockQuote } from "@/lib/stockData";
 
 const riskTone = (score: number) =>
   score <= 33 ? "text-chart-up" : score <= 66 ? "text-chart-neutral" : "text-chart-down";
@@ -23,9 +24,19 @@ const RiskBadge = ({ r }: { r: BasketRow }) => {
   );
 };
 
-const RowLine = ({ r }: { r: BasketRow }) => (
-  <div className="rounded-lg border border-border bg-secondary/30 p-2 text-xs">
-    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+const LiveStat = ({ label, value, tone }: { label: string; value: string; tone?: string }) => (
+  <div className="flex items-center justify-between gap-4">
+    <span className="text-muted-foreground">{label}</span>
+    <span className={`font-mono font-medium ${tone ?? "text-foreground"}`}>{value}</span>
+  </div>
+);
+
+const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => (
+  <div className="group relative">
+    <button
+      type="button"
+      className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-left text-xs transition-colors hover:border-primary/50 hover:bg-secondary/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+    >
       <span className="font-medium text-foreground">{r.symbol}</span>
       <span className="font-mono text-muted-foreground">
         open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
@@ -49,18 +60,50 @@ const RowLine = ({ r }: { r: BasketRow }) => (
           {r.direction.toUpperCase()}
         </span>
       )}
-    </div>
-    {r.risk_score != null && (
-      <div className="mt-1">
-        <RiskBadge r={r} />
+      {r.risk_score != null && (
+        <span className="w-full">
+          <RiskBadge r={r} />
+        </span>
+      )}
+    </button>
+    <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-64 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-xs shadow-xl group-hover:block group-focus-within:block">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-semibold text-foreground">{live?.name ?? r.symbol}</span>
+        {live && (
+          <span className={`font-mono font-bold ${live.changePercent >= 0 ? "text-chart-up" : "text-chart-down"}`}>
+            ₹{live.price.toFixed(2)} ({live.changePercent >= 0 ? "+" : ""}{live.changePercent.toFixed(2)}%)
+          </span>
+        )}
       </div>
-    )}
+      {live ? (
+        <div className="space-y-1">
+          <LiveStat label="Live price" value={`₹${live.price.toFixed(2)}`} />
+          <LiveStat
+            label="Change"
+            value={`${live.change >= 0 ? "+" : ""}₹${live.change.toFixed(2)} (${live.changePercent >= 0 ? "+" : ""}${live.changePercent.toFixed(2)}%)`}
+            tone={live.change >= 0 ? "text-chart-up" : "text-chart-down"}
+          />
+          <LiveStat label="Open" value={`₹${live.open.toFixed(2)}`} />
+          <LiveStat label="Day high" value={`₹${live.high.toFixed(2)}`} tone="text-chart-up" />
+          <LiveStat label="Day low" value={`₹${live.low.toFixed(2)}`} tone="text-chart-down" />
+          <LiveStat label="Volume" value={live.volume} />
+        </div>
+      ) : (
+        <p className="text-muted-foreground">No live quote available for this stock right now.</p>
+      )}
+      <div className="mt-2 border-t border-border pt-2">
+        <LiveStat label="Basket open" value={`₹${r.base_price.toFixed(2)}`} />
+        <LiveStat label="Predicted close" value={`₹${r.predicted_close.toFixed(2)}`} />
+        {r.close_price != null && <LiveStat label="Actual close" value={`₹${r.close_price.toFixed(2)}`} />}
+      </div>
+    </div>
   </div>
 );
 
 const BasketAccuracy = () => {
-  const { candidates, budgetMax } = useDailyBasket();
+  const { candidates, budgetMax, stocks } = useDailyBasket();
   const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
+  const liveBySymbol = useMemo(() => new Map(stocks.map((s) => [s.symbol, s])), [stocks]);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const queryClient = useQueryClient();
@@ -86,7 +129,7 @@ const BasketAccuracy = () => {
           <h3 className="text-lg font-semibold text-foreground">Today's Basket Accuracy</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Set a total budget in Portfolio settings. Each morning the app picks up to 8 stocks that
+          Set a total budget in Portfolio settings. Each morning the app picks up to 10 stocks that
           have a track record of gaining between open and close and are forecast to rise today, then
           checks after 15:30 IST whether a same-day trade would have made money. Every day is saved
           so you can compare accuracy across days.
@@ -178,7 +221,7 @@ const BasketAccuracy = () => {
 
           <div className="mt-4 space-y-2">
             {rows.map((r) => (
-              <RowLine key={r.symbol} r={r} />
+              <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} />
             ))}
           </div>
         </>
@@ -224,7 +267,7 @@ const BasketAccuracy = () => {
                   {isOpen && (
                     <div className="space-y-2 border-t border-border p-2">
                       {day.rows.map((r) => (
-                        <RowLine key={r.symbol} r={r} />
+                        <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} />
                       ))}
                     </div>
                   )}
@@ -236,7 +279,7 @@ const BasketAccuracy = () => {
       )}
 
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Each trading morning, up to 8 stocks within your budget that regularly close above their
+        Each trading morning, up to 10 stocks within your budget that regularly close above their
         opening price and are forecast to rise today are locked in, then checked against the actual
         close after 15:30 IST. Every day is stored so you can compare accuracy across days. Not
         financial advice. Each pick also shows a 0-100 risk score built from how widely its
