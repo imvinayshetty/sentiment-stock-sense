@@ -971,6 +971,7 @@ serve(async (req) => {
         .from("basket_prediction").select("*")
         .eq("session_id", session)
         .lt("basket_date", basketDate)
+        .gte("basket_date", weekStart)
         .order("basket_date", { ascending: false })
         .limit(400);
       let past = pastRows ?? [];
