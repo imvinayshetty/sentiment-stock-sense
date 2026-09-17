@@ -14,6 +14,8 @@ import BasketAccuracy from "@/components/BasketAccuracy";
 import BasketComparison from "@/components/BasketComparison";
 import BasketDayCompare from "@/components/BasketDayCompare";
 import DemoTrading from "@/components/DemoTrading";
+import CollapsibleSection from "@/components/CollapsibleSection";
+import { Scale, Columns2, Wallet } from "lucide-react";
 import { useStockQuotes, useForecast, useNewsSentiment } from "@/hooks/useAngelOneData";
 
 const Index = () => {
@@ -120,22 +122,28 @@ const Index = () => {
           <BasketAccuracy />
         </div>
 
-        {/* Basket vs Market Comparison */}
+        {/* Basket vs Market Comparison (collapsed by default) */}
         <div className="animate-fade-in-up" style={{ animationDelay: "385ms" }}>
-          <BasketComparison />
+          <CollapsibleSection title="Basket vs Market Comparison" icon={<Scale className="h-5 w-5 text-primary" />}>
+            <BasketComparison />
+          </CollapsibleSection>
         </div>
 
-        {/* Two-day side-by-side comparison */}
+        {/* Two-day side-by-side comparison (collapsed by default) */}
         <div className="animate-fade-in-up" style={{ animationDelay: "390ms" }}>
-          <BasketDayCompare />
+          <CollapsibleSection title="Compare Two Days Side by Side" icon={<Columns2 className="h-5 w-5 text-primary" />}>
+            <BasketDayCompare />
+          </CollapsibleSection>
         </div>
 
 
 
 
-        {/* Demo Trading */}
+        {/* Demo Trading (collapsed by default) */}
         <div className="animate-fade-in-up" style={{ animationDelay: "400ms" }}>
-          <DemoTrading />
+          <CollapsibleSection title="Demo Trading" icon={<Wallet className="h-5 w-5 text-primary" />}>
+            <DemoTrading />
+          </CollapsibleSection>
         </div>
 
         {/* News */}
