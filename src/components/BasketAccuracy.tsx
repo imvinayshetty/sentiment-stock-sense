@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,85 +32,141 @@ const LiveStat = ({ label, value, tone }: { label: string; value: string; tone?:
   </div>
 );
 
-const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => (
-  <div className="group relative">
-    <button
-      type="button"
-      className="w-full rounded-lg border border-border bg-secondary/30 p-2 text-left transition-colors hover:border-primary/50 hover:bg-secondary/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-    >
-      <div className="flex items-center justify-between gap-1">
-        <span className="font-mono text-sm font-bold text-foreground">{r.symbol}</span>
-        {r.close_price == null ? (
-          <Clock className="h-3.5 w-3.5 text-chart-neutral" />
-        ) : r.correct ? (
-          <CheckCircle2 className="h-3.5 w-3.5 text-chart-up" />
-        ) : (
-          <XCircle className="h-3.5 w-3.5 text-chart-down" />
-        )}
-      </div>
-      {live ? (
-        <div className="mt-0.5 font-mono text-xs text-foreground">₹{live.price.toFixed(2)}</div>
-      ) : (
-        <div className="mt-0.5 font-mono text-xs text-foreground">₹{r.base_price.toFixed(2)}</div>
-      )}
-      <div
-        className={`font-mono text-[11px] ${
-          r.close_price == null
-            ? "text-muted-foreground"
-            : r.close_price >= r.base_price
-              ? "text-chart-up"
-              : "text-chart-down"
-        }`}
+const TOOLTIP_WIDTH = 260;
+const TOOLTIP_EST_HEIGHT = 320;
+
+const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => {
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number; flip: boolean } | null>(null);
+
+  // Position the pop-up as a fixed overlay (portal to <body>) so it can never
+  // be hidden behind other sections/cards regardless of stacking contexts.
+  const update = useCallback(() => {
+    const el = btnRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const margin = 8;
+    const gap = 6;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flip = spaceBelow < TOOLTIP_EST_HEIGHT && rect.top > spaceBelow;
+    const left = Math.min(
+      Math.max(margin, rect.left + rect.width / 2 - TOOLTIP_WIDTH / 2),
+      Math.max(margin, window.innerWidth - TOOLTIP_WIDTH - margin),
+    );
+    setPos({ left, top: flip ? rect.top - gap : rect.bottom + gap, flip });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open, update]);
+
+  return (
+    <div>
+      <button
+        ref={btnRef}
+        type="button"
+        onPointerEnter={() => setOpen(true)}
+        onPointerLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="w-full rounded-lg border border-border bg-secondary/30 p-2 text-left transition-colors hover:border-primary/50 hover:bg-secondary/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
       >
-        {r.close_price == null
-          ? "awaiting close"
-          : `${r.correct ? "+" : "−"}₹${Math.abs(r.close_price - r.base_price).toFixed(2)}/sh`}
-      </div>
-    </button>
-    <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-64 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-xs shadow-xl group-hover:block group-focus-within:block">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-semibold text-foreground">{live?.name ?? r.symbol}</span>
-        {live && (
-          <span className={`font-mono font-bold ${live.changePercent >= 0 ? "text-chart-up" : "text-chart-down"}`}>
-            ₹{live.price.toFixed(2)} ({live.changePercent >= 0 ? "+" : ""}{live.changePercent.toFixed(2)}%)
-          </span>
-        )}
-      </div>
-      {live ? (
-        <div className="space-y-1">
-          <LiveStat label="Live price" value={`₹${live.price.toFixed(2)}`} />
-          <LiveStat
-            label="Change"
-            value={`${live.change >= 0 ? "+" : ""}₹${live.change.toFixed(2)} (${live.changePercent >= 0 ? "+" : ""}${live.changePercent.toFixed(2)}%)`}
-            tone={live.change >= 0 ? "text-chart-up" : "text-chart-down"}
-          />
-          <LiveStat label="Open" value={`₹${live.open.toFixed(2)}`} />
-          <LiveStat label="Day high" value={`₹${live.high.toFixed(2)}`} tone="text-chart-up" />
-          <LiveStat label="Day low" value={`₹${live.low.toFixed(2)}`} tone="text-chart-down" />
-          <LiveStat label="Volume" value={live.volume} />
+        <div className="flex items-center justify-between gap-1">
+          <span className="font-mono text-sm font-bold text-foreground">{r.symbol}</span>
+          {r.close_price == null ? (
+            <Clock className="h-3.5 w-3.5 text-chart-neutral" />
+          ) : r.correct ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-chart-up" />
+          ) : (
+            <XCircle className="h-3.5 w-3.5 text-chart-down" />
+          )}
         </div>
-      ) : (
-        <p className="text-muted-foreground">No live quote available for this stock right now.</p>
-      )}
-      <div className="mt-2 border-t border-border pt-2">
-        <LiveStat label="Basket open" value={`₹${r.base_price.toFixed(2)}`} />
-        <LiveStat label="Predicted close" value={`₹${r.predicted_close.toFixed(2)}`} />
-        {r.close_price != null && (
-          <LiveStat
-            label="Actual close"
-            value={`₹${r.close_price.toFixed(2)} · ${r.correct ? "correct" : "wrong"}`}
-            tone={r.correct ? "text-chart-up" : "text-chart-down"}
-          />
+        {live ? (
+          <div className="mt-0.5 font-mono text-xs text-foreground">₹{live.price.toFixed(2)}</div>
+        ) : (
+          <div className="mt-0.5 font-mono text-xs text-foreground">₹{r.base_price.toFixed(2)}</div>
         )}
-        {r.risk_score != null && (
-          <div className="mt-1">
-            <RiskBadge r={r} />
-          </div>
+        <div
+          className={`font-mono text-[11px] ${
+            r.close_price == null
+              ? "text-muted-foreground"
+              : r.close_price >= r.base_price
+                ? "text-chart-up"
+                : "text-chart-down"
+          }`}
+        >
+          {r.close_price == null
+            ? "awaiting close"
+            : `${r.correct ? "+" : "−"}₹${Math.abs(r.close_price - r.base_price).toFixed(2)}/sh`}
+        </div>
+      </button>
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            role="tooltip"
+            className="pointer-events-none fixed z-[9999] rounded-lg border border-border bg-popover p-3 text-xs shadow-xl"
+            style={{
+              left: pos.left,
+              top: pos.top,
+              width: TOOLTIP_WIDTH,
+              transform: pos.flip ? "translateY(-100%)" : undefined,
+            }}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-semibold text-foreground">{live?.name ?? r.symbol}</span>
+              {live && (
+                <span className={`font-mono font-bold ${live.changePercent >= 0 ? "text-chart-up" : "text-chart-down"}`}>
+                  ₹{live.price.toFixed(2)} ({live.changePercent >= 0 ? "+" : ""}{live.changePercent.toFixed(2)}%)
+                </span>
+              )}
+            </div>
+            {live ? (
+              <div className="space-y-1">
+                <LiveStat label="Live price" value={`₹${live.price.toFixed(2)}`} />
+                <LiveStat
+                  label="Change"
+                  value={`${live.change >= 0 ? "+" : ""}₹${live.change.toFixed(2)} (${live.changePercent >= 0 ? "+" : ""}${live.changePercent.toFixed(2)}%)`}
+                  tone={live.change >= 0 ? "text-chart-up" : "text-chart-down"}
+                />
+                <LiveStat label="Open" value={`₹${live.open.toFixed(2)}`} />
+                <LiveStat label="Day high" value={`₹${live.high.toFixed(2)}`} tone="text-chart-up" />
+                <LiveStat label="Day low" value={`₹${live.low.toFixed(2)}`} tone="text-chart-down" />
+                <LiveStat label="Volume" value={live.volume} />
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No live quote available for this stock right now.</p>
+            )}
+            <div className="mt-2 border-t border-border pt-2">
+              <LiveStat label="Basket open" value={`₹${r.base_price.toFixed(2)}`} />
+              <LiveStat label="Predicted close" value={`₹${r.predicted_close.toFixed(2)}`} />
+              {r.close_price != null && (
+                <LiveStat
+                  label="Actual close"
+                  value={`₹${r.close_price.toFixed(2)} · ${r.correct ? "correct" : "wrong"}`}
+                  tone={r.correct ? "text-chart-up" : "text-chart-down"}
+                />
+              )}
+              {r.risk_score != null && (
+                <div className="mt-1">
+                  <RiskBadge r={r} />
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body,
         )}
-      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const BasketAccuracy = () => {
   const { candidates, budgetMax, stocks } = useDailyBasket();
