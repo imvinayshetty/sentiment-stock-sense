@@ -1031,6 +1031,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: true,
         basketDate,
+        weekStart,
         tradingToday,
         phase: sessionEnded ? "closed" : "open",
         rows: todaysRows,
