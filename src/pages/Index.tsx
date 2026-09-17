@@ -12,10 +12,11 @@ import PriceTarget from "@/components/PriceTarget";
 import NewsFeed from "@/components/NewsFeed";
 import BasketAccuracy from "@/components/BasketAccuracy";
 import BasketComparison from "@/components/BasketComparison";
+import BasketHistory from "@/components/BasketHistory";
 import BasketDayCompare from "@/components/BasketDayCompare";
 import DemoTrading from "@/components/DemoTrading";
 import CollapsibleSection from "@/components/CollapsibleSection";
-import { Scale, Columns2, Wallet } from "lucide-react";
+import { Scale, Columns2, Wallet, History } from "lucide-react";
 import { useStockQuotes, useForecast, useNewsSentiment } from "@/hooks/useAngelOneData";
 
 const Index = () => {
@@ -120,6 +121,13 @@ const Index = () => {
         {/* Basket Accuracy */}
         <div className="animate-fade-in-up" style={{ animationDelay: "375ms" }}>
           <BasketAccuracy />
+        </div>
+
+        {/* Basket history (collapsed by default) */}
+        <div className="animate-fade-in-up" style={{ animationDelay: "380ms" }}>
+          <CollapsibleSection title="Basket History" icon={<History className="h-5 w-5 text-primary" />}>
+            <BasketHistory />
+          </CollapsibleSection>
         </div>
 
         {/* Basket vs Market Comparison (collapsed by default) */}
