@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useDailyBasket, useBasketAccuracy, resetBasket, type BasketRow } from "@/hooks/useDailyBasket";
+import type { StockQuote } from "@/lib/stockData";
 
 const riskTone = (score: number) =>
   score <= 33 ? "text-chart-up" : score <= 66 ? "text-chart-neutral" : "text-chart-down";
