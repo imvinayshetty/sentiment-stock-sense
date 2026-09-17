@@ -101,8 +101,9 @@ const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => (
 );
 
 const BasketAccuracy = () => {
-  const { candidates, budgetMax } = useDailyBasket();
+  const { candidates, budgetMax, stocks } = useDailyBasket();
   const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
+  const liveBySymbol = useMemo(() => new Map(stocks.map((s) => [s.symbol, s])), [stocks]);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const queryClient = useQueryClient();
@@ -128,7 +129,7 @@ const BasketAccuracy = () => {
           <h3 className="text-lg font-semibold text-foreground">Today's Basket Accuracy</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Set a total budget in Portfolio settings. Each morning the app picks up to 8 stocks that
+          Set a total budget in Portfolio settings. Each morning the app picks up to 10 stocks that
           have a track record of gaining between open and close and are forecast to rise today, then
           checks after 15:30 IST whether a same-day trade would have made money. Every day is saved
           so you can compare accuracy across days.
@@ -220,7 +221,7 @@ const BasketAccuracy = () => {
 
           <div className="mt-4 space-y-2">
             {rows.map((r) => (
-              <RowLine key={r.symbol} r={r} />
+              <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} />
             ))}
           </div>
         </>
@@ -266,7 +267,7 @@ const BasketAccuracy = () => {
                   {isOpen && (
                     <div className="space-y-2 border-t border-border p-2">
                       {day.rows.map((r) => (
-                        <RowLine key={r.symbol} r={r} />
+                        <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} />
                       ))}
                     </div>
                   )}
@@ -278,7 +279,7 @@ const BasketAccuracy = () => {
       )}
 
       <p className="mt-3 text-[10px] text-muted-foreground/70">
-        Each trading morning, up to 8 stocks within your budget that regularly close above their
+        Each trading morning, up to 10 stocks within your budget that regularly close above their
         opening price and are forecast to rise today are locked in, then checked against the actual
         close after 15:30 IST. Every day is stored so you can compare accuracy across days. Not
         financial advice. Each pick also shows a 0-100 risk score built from how widely its
