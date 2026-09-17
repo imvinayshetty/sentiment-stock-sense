@@ -276,7 +276,7 @@ const BasketAccuracy = () => {
                     </span>
                   </button>
                   {isOpen && (
-                    <div className="space-y-2 border-t border-border p-2">
+                    <div className="grid grid-cols-2 gap-2 border-t border-border p-2 sm:grid-cols-3 lg:grid-cols-5">
                       {day.rows.map((r) => (
                         <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} />
                       ))}
