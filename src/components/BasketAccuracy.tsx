@@ -24,9 +24,19 @@ const RiskBadge = ({ r }: { r: BasketRow }) => {
   );
 };
 
-const RowLine = ({ r }: { r: BasketRow }) => (
-  <div className="rounded-lg border border-border bg-secondary/30 p-2 text-xs">
-    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+const LiveStat = ({ label, value, tone }: { label: string; value: string; tone?: string }) => (
+  <div className="flex items-center justify-between gap-4">
+    <span className="text-muted-foreground">{label}</span>
+    <span className={`font-mono font-medium ${tone ?? "text-foreground"}`}>{value}</span>
+  </div>
+);
+
+const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => (
+  <div className="group relative">
+    <button
+      type="button"
+      className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-left text-xs transition-colors hover:border-primary/50 hover:bg-secondary/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+    >
       <span className="font-medium text-foreground">{r.symbol}</span>
       <span className="font-mono text-muted-foreground">
         open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
@@ -50,12 +60,43 @@ const RowLine = ({ r }: { r: BasketRow }) => (
           {r.direction.toUpperCase()}
         </span>
       )}
-    </div>
-    {r.risk_score != null && (
-      <div className="mt-1">
-        <RiskBadge r={r} />
+      {r.risk_score != null && (
+        <span className="w-full">
+          <RiskBadge r={r} />
+        </span>
+      )}
+    </button>
+    <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-64 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-xs shadow-xl group-hover:block group-focus-within:block">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-semibold text-foreground">{live?.name ?? r.symbol}</span>
+        {live && (
+          <span className={`font-mono font-bold ${live.changePercent >= 0 ? "text-chart-up" : "text-chart-down"}`}>
+            ₹{live.price.toFixed(2)} ({live.changePercent >= 0 ? "+" : ""}{live.changePercent.toFixed(2)}%)
+          </span>
+        )}
       </div>
-    )}
+      {live ? (
+        <div className="space-y-1">
+          <LiveStat label="Live price" value={`₹${live.price.toFixed(2)}`} />
+          <LiveStat
+            label="Change"
+            value={`${live.change >= 0 ? "+" : ""}₹${live.change.toFixed(2)} (${live.changePercent >= 0 ? "+" : ""}${live.changePercent.toFixed(2)}%)`}
+            tone={live.change >= 0 ? "text-chart-up" : "text-chart-down"}
+          />
+          <LiveStat label="Open" value={`₹${live.open.toFixed(2)}`} />
+          <LiveStat label="Day high" value={`₹${live.high.toFixed(2)}`} tone="text-chart-up" />
+          <LiveStat label="Day low" value={`₹${live.low.toFixed(2)}`} tone="text-chart-down" />
+          <LiveStat label="Volume" value={live.volume} />
+        </div>
+      ) : (
+        <p className="text-muted-foreground">No live quote available for this stock right now.</p>
+      )}
+      <div className="mt-2 border-t border-border pt-2">
+        <LiveStat label="Basket open" value={`₹${r.base_price.toFixed(2)}`} />
+        <LiveStat label="Predicted close" value={`₹${r.predicted_close.toFixed(2)}`} />
+        {r.close_price != null && <LiveStat label="Actual close" value={`₹${r.close_price.toFixed(2)}`} />}
+      </div>
+    </div>
   </div>
 );
 
