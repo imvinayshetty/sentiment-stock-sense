@@ -35,36 +35,36 @@ const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => (
   <div className="group relative">
     <button
       type="button"
-      className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-secondary/30 p-2 text-left text-xs transition-colors hover:border-primary/50 hover:bg-secondary/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+      className="w-full rounded-lg border border-border bg-secondary/30 p-2 text-left transition-colors hover:border-primary/50 hover:bg-secondary/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
     >
-      <span className="font-medium text-foreground">{r.symbol}</span>
-      <span className="font-mono text-muted-foreground">
-        open ₹{r.base_price.toFixed(2)} → pred ₹{r.predicted_close.toFixed(2)}
-        {r.close_price != null && (
-          <>
-            <span className="text-foreground"> · close ₹{r.close_price.toFixed(2)}</span>
-            <span className={r.close_price >= r.base_price ? "text-chart-up" : "text-chart-down"}>
-              {" "}· {r.close_price >= r.base_price ? "+" : "−"}₹
-              {Math.abs(r.close_price - r.base_price).toFixed(2)}/share
-            </span>
-          </>
+      <div className="flex items-center justify-between gap-1">
+        <span className="font-mono text-sm font-bold text-foreground">{r.symbol}</span>
+        {r.close_price == null ? (
+          <Clock className="h-3.5 w-3.5 text-chart-neutral" />
+        ) : r.correct ? (
+          <CheckCircle2 className="h-3.5 w-3.5 text-chart-up" />
+        ) : (
+          <XCircle className="h-3.5 w-3.5 text-chart-down" />
         )}
-      </span>
-      {r.close_price == null ? (
-        <span className="flex items-center gap-1 text-chart-neutral">
-          <Clock className="h-3.5 w-3.5" /> awaiting close
-        </span>
+      </div>
+      {live ? (
+        <div className="mt-0.5 font-mono text-xs text-foreground">₹{live.price.toFixed(2)}</div>
       ) : (
-        <span className={`flex items-center gap-1 font-medium ${r.correct ? "text-chart-up" : "text-chart-down"}`}>
-          {r.correct ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-          {r.direction.toUpperCase()}
-        </span>
+        <div className="mt-0.5 font-mono text-xs text-foreground">₹{r.base_price.toFixed(2)}</div>
       )}
-      {r.risk_score != null && (
-        <span className="w-full">
-          <RiskBadge r={r} />
-        </span>
-      )}
+      <div
+        className={`font-mono text-[11px] ${
+          r.close_price == null
+            ? "text-muted-foreground"
+            : r.close_price >= r.base_price
+              ? "text-chart-up"
+              : "text-chart-down"
+        }`}
+      >
+        {r.close_price == null
+          ? "awaiting close"
+          : `${r.correct ? "+" : "−"}₹${Math.abs(r.close_price - r.base_price).toFixed(2)}/sh`}
+      </div>
     </button>
     <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-64 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-xs shadow-xl group-hover:block group-focus-within:block">
       <div className="mb-2 flex items-center justify-between">
@@ -94,7 +94,18 @@ const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => (
       <div className="mt-2 border-t border-border pt-2">
         <LiveStat label="Basket open" value={`₹${r.base_price.toFixed(2)}`} />
         <LiveStat label="Predicted close" value={`₹${r.predicted_close.toFixed(2)}`} />
-        {r.close_price != null && <LiveStat label="Actual close" value={`₹${r.close_price.toFixed(2)}`} />}
+        {r.close_price != null && (
+          <LiveStat
+            label="Actual close"
+            value={`₹${r.close_price.toFixed(2)} · ${r.correct ? "correct" : "wrong"}`}
+            tone={r.correct ? "text-chart-up" : "text-chart-down"}
+          />
+        )}
+        {r.risk_score != null && (
+          <div className="mt-1">
+            <RiskBadge r={r} />
+          </div>
+        )}
       </div>
     </div>
   </div>
