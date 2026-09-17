@@ -769,11 +769,20 @@ serve(async (req) => {
       const basketDate = cursor.toISOString().slice(0, 10);
       const sessionEnded = basketDate < todayIst || istMinutes > 15 * 60 + 30;
 
+      // Keep only the current week (Monday -> today, IST): older baskets are purged.
+      const weekStartDate = new Date(nowIst);
+      const istDow = weekStartDate.getUTCDay();
+      weekStartDate.setUTCDate(weekStartDate.getUTCDate() - ((istDow + 6) % 7));
+      const weekStart = weekStartDate.toISOString().slice(0, 10);
+      await supabase.from("basket_prediction").delete()
+        .eq("session_id", session).lt("basket_date", weekStart);
+
       // Manual reset: wipe today's rows so the basket is re-picked fresh below.
       if (url.searchParams.get("reset") === "1" && tradingToday) {
         await supabase.from("basket_prediction").delete()
           .eq("session_id", session).eq("basket_date", basketDate);
       }
+
 
       const { data: existing } = await supabase
         .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);
