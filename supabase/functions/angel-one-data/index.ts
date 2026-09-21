@@ -597,24 +597,31 @@ let scripTokenPromise: Promise<Record<string, string>> | null = null;
 async function getScripTokens(): Promise<Record<string, string>> {
   if (scripTokenCache) return scripTokenCache;
   if (!scripTokenPromise) {
+    // All concurrent callers share this one attempt (no reset on failure), so a
+    // slow ScripMaster can't fan out into parallel 5MB downloads. A failure only
+    // resolves as a rejected promise for this cold start; the next cold start retries.
     scripTokenPromise = (async () => {
-      const res = await fetch(
-        "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json",
-      );
-      const list = await res.json();
-      const map: Record<string, string> = {};
-      for (const row of Array.isArray(list) ? list : []) {
-        if (row?.exch_seg !== "NSE") continue;
-        const sym = String(row.symbol ?? "");
-        if (!sym.endsWith("-EQ")) continue;
-        map[sym.slice(0, -3)] = String(row.token);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10_000);
+      try {
+        const res = await fetch(
+          "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json",
+          { signal: controller.signal },
+        );
+        const list = await res.json();
+        const map: Record<string, string> = {};
+        for (const row of Array.isArray(list) ? list : []) {
+          if (row?.exch_seg !== "NSE") continue;
+          const sym = String(row.symbol ?? "");
+          if (!sym.endsWith("-EQ")) continue;
+          map[sym.slice(0, -3)] = String(row.token);
+        }
+        scripTokenCache = map;
+        return map;
+      } finally {
+        clearTimeout(timer);
       }
-      scripTokenCache = map;
-      return map;
-    })().catch((e) => {
-      scripTokenPromise = null;
-      throw e;
-    });
+    })();
   }
   return scripTokenPromise;
 }
@@ -663,13 +670,15 @@ async function fetchRoundTripCharges(
   qty: number,
 ): Promise<number | null> {
   const intPrice = String(Math.max(1, Math.round(price)));
+  // Angel One expects the NSE equity trading symbol (RELIANCE-EQ), not the bare symbol.
+  const tradingSymbol = symbol.endsWith("-EQ") ? symbol : `${symbol}-EQ`;
   const leg = (transaction_type: "BUY" | "SELL") => ({
     product_type: "INTRADAY",
     transaction_type,
     quantity: String(qty),
     price: intPrice,
     exchange: "NSE",
-    symbol_name: symbol,
+    symbol_name: tradingSymbol,
     token,
   });
   try {
@@ -690,7 +699,7 @@ function estimateRoundTripCharges(price: number, qty: number): number {
   const turnover = price * qty;
   const stt = turnover * 0.00025;              // 0.025% sell side
   const exchange = turnover * 2 * 0.0000322;   // 0.00322% per side
-  const sebi = turnover * 2 * 0.000001;
+  const sebi = turnover * 0.000001;            // ₹10/crore, charged once per trade
   const stamp = turnover * 0.00003;            // 0.003% buy side
   const gst = (exchange + sebi) * 0.18;
   return stt + exchange + sebi + stamp + gst;
