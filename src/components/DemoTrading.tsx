@@ -613,6 +613,154 @@ const DemoTrading = () => {
   const monitored = quotes?.marketStatus === "OPEN" ? holdingsList : EMPTY_POSITIONS;
   useAutoExitMonitoring(monitored, priceMap, handleAutoExit);
 
+  // ---------- Auto-buy rules ----------
+  const balanceRef = useRef(balance);
+  useEffect(() => {
+    balanceRef.current = balance;
+  }, [balance]);
+  const rulesRef = useRef(autoBuyRules);
+  useEffect(() => {
+    rulesRef.current = autoBuyRules;
+  }, [autoBuyRules]);
+
+  const handleAddRule = () => {
+    if (!liveSelected) return;
+    const trigger = Number(ruleTrigger);
+    const qty = Math.floor(Number(ruleQty));
+    if (!Number.isFinite(trigger) || trigger <= 0) {
+      toast({ title: "Invalid trigger price", description: "Enter a price above 0.", variant: "destructive" });
+      return;
+    }
+    if (liveSelected.price > 0 && trigger >= liveSelected.price) {
+      toast({
+        title: "Trigger too high",
+        description: `Enter a price below the current ₹${liveSelected.price.toFixed(2)} so the rule waits for a dip.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!Number.isFinite(qty) || qty < 1) {
+      toast({ title: "Invalid quantity", description: "Enter at least 1 share.", variant: "destructive" });
+      return;
+    }
+    const slPct = ruleSl.trim() === "" ? undefined : Math.abs(Number(ruleSl));
+    const tgtPct = ruleTgt.trim() === "" ? undefined : Math.abs(Number(ruleTgt));
+    if ((slPct != null && !(slPct > 0 && slPct < 100)) || (tgtPct != null && !(tgtPct > 0))) {
+      toast({ title: "Invalid exit levels", description: "Stop loss and target must be positive percentages.", variant: "destructive" });
+      return;
+    }
+    if (
+      rulesRef.current.some(
+        (r) => r.status === "active" && r.symbol === liveSelected.symbol && r.triggerPrice === trigger,
+      )
+    ) {
+      toast({ title: "Rule already exists", description: `${liveSelected.symbol} at ₹${trigger.toFixed(2)} is already waiting.` });
+      return;
+    }
+    setAutoBuyRules((rs) => [
+      {
+        id: crypto.randomUUID(),
+        symbol: liveSelected.symbol,
+        name: liveSelected.name,
+        triggerPrice: trigger,
+        quantity: qty,
+        stopLossPct: slPct,
+        targetPct: tgtPct,
+        status: "active" as const,
+        createdAt: new Date().toISOString(),
+      },
+      ...rs,
+    ]);
+    setRuleTrigger("");
+    setRuleSl("");
+    setRuleTgt("");
+    toast({
+      title: "Auto-buy rule added",
+      description: `Buy ${qty} × ${liveSelected.symbol} when price drops to ₹${trigger.toFixed(2)}.`,
+    });
+  };
+
+  const cancelRule = (id: string) =>
+    setAutoBuyRules((rs) => rs.map((r) => (r.id === id ? { ...r, status: "cancelled" as const } : r)));
+  const removeRule = (id: string) => setAutoBuyRules((rs) => rs.filter((r) => r.id !== id));
+
+  // A triggered rule buys once at the live price, attaches its exit levels to
+  // the position, then switches itself off.
+  const handleAutoBuyTrigger = useCallback(
+    (ruleId: string, price: number) => {
+      const rule = rulesRef.current.find((r) => r.id === ruleId);
+      if (!rule || rule.status !== "active") return;
+      const total = price * rule.quantity;
+      if (total > balanceRef.current) {
+        setAutoBuyRules((rs) =>
+          rs.map((r) =>
+            r.id === ruleId
+              ? {
+                  ...r,
+                  status: "cancelled" as const,
+                  note: `Needed ₹${total.toFixed(2)}, balance was ₹${balanceRef.current.toFixed(2)}`,
+                }
+              : r,
+          ),
+        );
+        toast({
+          title: "Auto-buy skipped",
+          description: `${rule.symbol} hit ₹${price.toFixed(2)} but the balance was too low.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const slPrice = rule.stopLossPct != null ? price * (1 - rule.stopLossPct / 100) : undefined;
+      const tgtPrice = rule.targetPct != null ? price * (1 + rule.targetPct / 100) : undefined;
+      setBalance((b) => b - total);
+      setTrades((t) =>
+        [
+          {
+            id: crypto.randomUUID(),
+            symbol: rule.symbol,
+            name: rule.name,
+            side: "BUY" as const,
+            price,
+            quantity: rule.quantity,
+            total,
+            at: new Date().toISOString(),
+            stopLossPrice: slPrice,
+            targetPrice: tgtPrice,
+            time: new Date().toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          },
+          ...t,
+        ].slice(0, MAX_TRADES),
+      );
+      setAutoBuyRules((rs) =>
+        rs.map((r) =>
+          r.id === ruleId
+            ? { ...r, status: "filled" as const, filledPrice: price, filledAt: new Date().toISOString() }
+            : r,
+        ),
+      );
+      toast({
+        title: "Auto-buy executed",
+        description: `Bought ${rule.quantity} × ${rule.symbol} @ ₹${price.toFixed(2)}${
+          slPrice != null ? ` · SL ₹${slPrice.toFixed(2)}` : ""
+        }${tgtPrice != null ? ` · Target ₹${tgtPrice.toFixed(2)}` : ""}`,
+      });
+    },
+    [toast],
+  );
+
+  // Only arm auto-buys while the market is open, so stale closing prices can't fill.
+  const monitoredRules = useMemo(
+    () => (quotes?.marketStatus === "OPEN" ? autoBuyRules.filter((r) => r.status === "active") : []),
+    [quotes?.marketStatus, autoBuyRules],
+  );
+  useAutoBuyMonitoring(monitoredRules, priceMap, handleAutoBuyTrigger);
+
+  const activeRules = autoBuyRules.filter((r) => r.status === "active");
+
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <header className="mb-4 flex items-center gap-2">
