@@ -4,7 +4,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useDailyBasket, useBasketAccuracy, resetBasket, type BasketRow } from "@/hooks/useDailyBasket";
+import { useIntradayBreakeven, type BreakevenRow } from "@/hooks/useIntradayBreakeven";
 import type { StockQuote } from "@/lib/stockData";
+
+const inr = (v: number) =>
+  `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const riskTone = (score: number) =>
   score <= 33 ? "text-chart-up" : score <= 66 ? "text-chart-neutral" : "text-chart-down";
