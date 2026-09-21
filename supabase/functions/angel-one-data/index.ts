@@ -1343,7 +1343,7 @@ serve(async (req) => {
         for (const r of profitable) {
           const shares = Math.floor(perStock / Math.max(1, r.marginPerShare));
           if (shares < 1) continue;
-          const legCharges = await fetchRoundTripCharges(supabase, r.symbol, ANGEL_TOKENS[r.symbol] ?? "", r.price, shares);
+          const legCharges = await fetchRoundTripCharges(supabase, r.symbol, (await resolveAngelToken(r.symbol)) ?? "", r.price, shares);
           const totalCharges = legCharges ?? estimateRoundTripCharges(r.price, shares);
           r.shares = shares;
           r.marginRequired = Number((shares * r.marginPerShare).toFixed(2));
