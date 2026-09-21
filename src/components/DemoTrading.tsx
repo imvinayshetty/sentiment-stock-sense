@@ -10,9 +10,12 @@ import {
   Loader2,
   ShieldAlert,
   Target,
+  Zap,
+  Trash2,
 } from "lucide-react";
 import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
 import { useAutoExitMonitoring, type ExitReason } from "@/hooks/useAutoExitMonitoring";
+import { useAutoBuyMonitoring } from "@/hooks/useAutoBuyMonitoring";
 import { useAnchoredDropdown } from "@/hooks/useAnchoredDropdown";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +52,27 @@ interface DemoHolding {
   stopLossPrice?: number;
   /** Optional take-profit exit level for the whole position. */
   targetPrice?: number;
+}
+
+/** One-shot auto-buy rule: buys a fixed quantity when price drops to a level. */
+interface AutoBuyRule {
+  id: string;
+  symbol: string;
+  name: string;
+  /** Buy when the live price is at or below this level. */
+  triggerPrice: number;
+  quantity: number;
+  /** Optional stop loss, as a % below the fill price. */
+  stopLossPct?: number;
+  /** Optional target, as a % above the fill price. */
+  targetPct?: number;
+  status: "active" | "filled" | "cancelled";
+  createdAt: string;
+  /** Fill details once triggered. */
+  filledPrice?: number;
+  filledAt?: string;
+  /** Why an active rule stopped: e.g. balance too low at trigger time. */
+  note?: string;
 }
 
 const MAX_BALANCE = 100000;
@@ -177,6 +201,13 @@ const DemoTrading = () => {
   const [targetValue, setTargetValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
   const [topUp, setTopUp] = useState("");
+  const [autoBuyRules, setAutoBuyRules] = useState<AutoBuyRule[]>(() =>
+    loadState<AutoBuyRule[]>("autoBuyRules", []),
+  );
+  const [ruleTrigger, setRuleTrigger] = useState("");
+  const [ruleQty, setRuleQty] = useState("1");
+  const [ruleSl, setRuleSl] = useState("");
+  const [ruleTgt, setRuleTgt] = useState("");
   const { data: quotes, isLoading } = useStockQuotes();
   const { toast } = useToast();
 
@@ -206,6 +237,7 @@ const DemoTrading = () => {
           trades?: Trade[];
           balance?: number;
           holdings?: Record<string, DemoHolding>;
+          autoBuyRules?: AutoBuyRule[];
         } | null;
         if (!cancelled && s) {
           const remoteTrades = Array.isArray(s.trades) ? migrateLedger(s.trades, s.holdings) : null;
@@ -214,6 +246,7 @@ const DemoTrading = () => {
           if (remoteTrades && remoteTrades.length >= tradesRef.current.length) {
             setTrades(remoteTrades);
             if (typeof s.balance === "number") setBalance(s.balance);
+            if (Array.isArray(s.autoBuyRules)) setAutoBuyRules(s.autoBuyRules);
           }
         }
       } catch (e) {
@@ -229,9 +262,9 @@ const DemoTrading = () => {
   // Persist to localStorage (fast cache) + backend (debounced, after remote load).
   // Data is only ever cleared by the Reset button, never by a refresh or lock.
   useEffect(() => {
-    const isEmpty = trades.length === 0 && balance === 0;
+    const isEmpty = trades.length === 0 && balance === 0 && autoBuyRules.length === 0;
     if (isEmpty && !resetRequested.current) return; // don't overwrite saved data with a blank slate
-    const payload = { trades, balance };
+    const payload = { trades, balance, autoBuyRules };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch { /* ignore quota / disabled storage */ }
@@ -243,7 +276,7 @@ const DemoTrading = () => {
         .then(({ error }) => { if (error) console.error("Demo portfolio save failed:", error); });
     }, 600);
     return () => clearTimeout(t);
-  }, [trades, balance]);
+  }, [trades, balance, autoBuyRules]);
 
   const handleReset = async () => {
     resetRequested.current = true;
@@ -252,6 +285,7 @@ const DemoTrading = () => {
     setSelected(null);
     setQuantity(1);
     setTopUp("");
+    setAutoBuyRules([]);
     localStorage.removeItem(STORAGE_KEY);
     try {
       await supabase.from("demo_state").delete().eq("session_id", sessionId.current);
