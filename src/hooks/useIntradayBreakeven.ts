@@ -70,7 +70,7 @@ export function useIntradayBreakeven(symbols: string[], budget: number | null, e
         clearTimeout(timer);
       }
     },
-    enabled: enabled && symbols.length > 0 && !!budget && budget > 0,
+    enabled: enabled && clean.length > 0 && !!budget && budget > 0,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
