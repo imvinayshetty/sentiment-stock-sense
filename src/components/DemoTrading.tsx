@@ -1268,20 +1268,20 @@ const DemoTrading = () => {
               </thead>
               <tbody>
                 {holdingsList.map((h) => {
-                  const livePrice = priceMap.get(h.symbol) ?? h.avgPrice;
+                  const marketPrice = priceMap.get(h.symbol);
                   const purchased = h.avgPrice * h.quantity;
-                  const current = livePrice * h.quantity;
-                  const pl = current - purchased;
-                  const plPct = purchased > 0 ? (pl / purchased) * 100 : 0;
-                  const up = pl >= 0;
+                  const current = marketPrice != null ? marketPrice * h.quantity : null;
+                  const pl = current != null ? current - purchased : null;
+                  const plPct = purchased > 0 && pl != null ? (pl / purchased) * 100 : null;
+                  const up = pl != null && pl >= 0;
                   const slDistancePct =
-                    h.stopLossPrice != null && livePrice > 0
-                      ? ((livePrice - h.stopLossPrice) / livePrice) * 100
+                    h.stopLossPrice != null && marketPrice != null && marketPrice > 0
+                      ? ((marketPrice - h.stopLossPrice) / marketPrice) * 100
                       : null;
                   const slNear = slDistancePct != null && slDistancePct < 1;
                   const tgtDistancePct =
-                    h.targetPrice != null && livePrice > 0
-                      ? ((h.targetPrice - livePrice) / livePrice) * 100
+                    h.targetPrice != null && marketPrice != null && marketPrice > 0
+                      ? ((h.targetPrice - marketPrice) / marketPrice) * 100
                       : null;
                   const tgtNear = tgtDistancePct != null && tgtDistancePct < 1;
                   return (
@@ -1302,16 +1302,14 @@ const DemoTrading = () => {
                           up ? "text-chart-up" : "text-chart-down"
                         }`}
                       >
-                        ₹{current.toFixed(2)}
+                         {current != null ? `₹${current.toFixed(2)}` : "Unavailable"}
                       </td>
                       <td
                         className={`py-2 pr-4 font-mono ${
                           up ? "text-chart-up" : "text-chart-down"
                         }`}
                       >
-                        {up ? "+" : ""}
-                        ₹{pl.toFixed(2)} ({up ? "+" : ""}
-                        {plPct.toFixed(2)}%)
+                         {pl != null && plPct != null ? `${up ? "+" : ""}₹${pl.toFixed(2)} (${up ? "+" : ""}${plPct.toFixed(2)}%)` : "—"}
                       </td>
                       <td className="py-2 pr-4 font-mono text-xs">
                         {h.stopLossPrice != null ? (
@@ -1320,7 +1318,7 @@ const DemoTrading = () => {
                               {slNear && <ShieldAlert className="h-3.5 w-3.5" />}
                               SL ₹{h.stopLossPrice.toFixed(2)}
                             </div>
-                            <div>{slDistancePct!.toFixed(2)}% away</div>
+                            {slDistancePct != null && <div>{slDistancePct.toFixed(2)}% away</div>}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -1333,7 +1331,7 @@ const DemoTrading = () => {
                               {tgtNear && <Target className="h-3.5 w-3.5" />}
                               ₹{h.targetPrice.toFixed(2)}
                             </div>
-                            <div>{tgtDistancePct!.toFixed(2)}% away</div>
+                            {tgtDistancePct != null && <div>{tgtDistancePct.toFixed(2)}% away</div>}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>

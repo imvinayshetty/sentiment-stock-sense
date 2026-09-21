@@ -946,6 +946,19 @@ serve(async (req) => {
         .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);
       let rows = dayRows ?? [];
 
+      // Repair today's opening snapshots from Angel One when older rows were
+      // created through a delayed fallback feed. Predictions stay unchanged.
+      if (market.status === "OPEN" && rows.length && liveQuotes.size > 0) {
+        const repaired = await fetchInBatches(rows, 5, async (row: any) => {
+          const open = Number(liveQuotes.get(row.symbol)?.open ?? 0);
+          if (!(open > 0) || open === Number(row.base_price)) return null;
+          await supabase.from("basket_prediction").update({ base_price: open }).eq("id", row.id);
+          return { id: row.id, base_price: open };
+        });
+        const repairedById = new Map(repaired.filter(Boolean).map((row: any) => [row.id, row]));
+        rows = rows.map((row: any) => repairedById.has(row.id) ? { ...row, ...repairedById.get(row.id) } : row);
+      }
+
       // Score unscored rows once the trading session has ended.
       const unscored = rows.filter((r: any) => r.close_price == null);
       if (sessionEnded && unscored.length) {
