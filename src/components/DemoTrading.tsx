@@ -10,9 +10,12 @@ import {
   Loader2,
   ShieldAlert,
   Target,
+  Zap,
+  Trash2,
 } from "lucide-react";
 import { useStockQuotes, resolveSymbol } from "@/hooks/useAngelOneData";
 import { useAutoExitMonitoring, type ExitReason } from "@/hooks/useAutoExitMonitoring";
+import { useAutoBuyMonitoring } from "@/hooks/useAutoBuyMonitoring";
 import { useAnchoredDropdown } from "@/hooks/useAnchoredDropdown";
 import { getStockDirectory, type StockQuote } from "@/lib/stockData";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +52,27 @@ interface DemoHolding {
   stopLossPrice?: number;
   /** Optional take-profit exit level for the whole position. */
   targetPrice?: number;
+}
+
+/** One-shot auto-buy rule: buys a fixed quantity when price drops to a level. */
+interface AutoBuyRule {
+  id: string;
+  symbol: string;
+  name: string;
+  /** Buy when the live price is at or below this level. */
+  triggerPrice: number;
+  quantity: number;
+  /** Optional stop loss, as a % below the fill price. */
+  stopLossPct?: number;
+  /** Optional target, as a % above the fill price. */
+  targetPct?: number;
+  status: "active" | "filled" | "cancelled";
+  createdAt: string;
+  /** Fill details once triggered. */
+  filledPrice?: number;
+  filledAt?: string;
+  /** Why an active rule stopped: e.g. balance too low at trigger time. */
+  note?: string;
 }
 
 const MAX_BALANCE = 100000;
@@ -177,6 +201,13 @@ const DemoTrading = () => {
   const [targetValue, setTargetValue] = useState<string>("");
   const [balance, setBalance] = useState(() => loadState("balance", 0));
   const [topUp, setTopUp] = useState("");
+  const [autoBuyRules, setAutoBuyRules] = useState<AutoBuyRule[]>(() =>
+    loadState<AutoBuyRule[]>("autoBuyRules", []),
+  );
+  const [ruleTrigger, setRuleTrigger] = useState("");
+  const [ruleQty, setRuleQty] = useState("1");
+  const [ruleSl, setRuleSl] = useState("");
+  const [ruleTgt, setRuleTgt] = useState("");
   const { data: quotes, isLoading } = useStockQuotes();
   const { toast } = useToast();
 
@@ -206,6 +237,7 @@ const DemoTrading = () => {
           trades?: Trade[];
           balance?: number;
           holdings?: Record<string, DemoHolding>;
+          autoBuyRules?: AutoBuyRule[];
         } | null;
         if (!cancelled && s) {
           const remoteTrades = Array.isArray(s.trades) ? migrateLedger(s.trades, s.holdings) : null;
@@ -214,6 +246,7 @@ const DemoTrading = () => {
           if (remoteTrades && remoteTrades.length >= tradesRef.current.length) {
             setTrades(remoteTrades);
             if (typeof s.balance === "number") setBalance(s.balance);
+            if (Array.isArray(s.autoBuyRules)) setAutoBuyRules(s.autoBuyRules);
           }
         }
       } catch (e) {
@@ -229,9 +262,9 @@ const DemoTrading = () => {
   // Persist to localStorage (fast cache) + backend (debounced, after remote load).
   // Data is only ever cleared by the Reset button, never by a refresh or lock.
   useEffect(() => {
-    const isEmpty = trades.length === 0 && balance === 0;
+    const isEmpty = trades.length === 0 && balance === 0 && autoBuyRules.length === 0;
     if (isEmpty && !resetRequested.current) return; // don't overwrite saved data with a blank slate
-    const payload = { trades, balance };
+    const payload = { trades, balance, autoBuyRules };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch { /* ignore quota / disabled storage */ }
@@ -243,7 +276,7 @@ const DemoTrading = () => {
         .then(({ error }) => { if (error) console.error("Demo portfolio save failed:", error); });
     }, 600);
     return () => clearTimeout(t);
-  }, [trades, balance]);
+  }, [trades, balance, autoBuyRules]);
 
   const handleReset = async () => {
     resetRequested.current = true;
@@ -252,6 +285,7 @@ const DemoTrading = () => {
     setSelected(null);
     setQuantity(1);
     setTopUp("");
+    setAutoBuyRules([]);
     localStorage.removeItem(STORAGE_KEY);
     try {
       await supabase.from("demo_state").delete().eq("session_id", sessionId.current);
@@ -579,6 +613,154 @@ const DemoTrading = () => {
   const monitored = quotes?.marketStatus === "OPEN" ? holdingsList : EMPTY_POSITIONS;
   useAutoExitMonitoring(monitored, priceMap, handleAutoExit);
 
+  // ---------- Auto-buy rules ----------
+  const balanceRef = useRef(balance);
+  useEffect(() => {
+    balanceRef.current = balance;
+  }, [balance]);
+  const rulesRef = useRef(autoBuyRules);
+  useEffect(() => {
+    rulesRef.current = autoBuyRules;
+  }, [autoBuyRules]);
+
+  const handleAddRule = () => {
+    if (!liveSelected) return;
+    const trigger = Number(ruleTrigger);
+    const qty = Math.floor(Number(ruleQty));
+    if (!Number.isFinite(trigger) || trigger <= 0) {
+      toast({ title: "Invalid trigger price", description: "Enter a price above 0.", variant: "destructive" });
+      return;
+    }
+    if (liveSelected.price > 0 && trigger >= liveSelected.price) {
+      toast({
+        title: "Trigger too high",
+        description: `Enter a price below the current ₹${liveSelected.price.toFixed(2)} so the rule waits for a dip.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!Number.isFinite(qty) || qty < 1) {
+      toast({ title: "Invalid quantity", description: "Enter at least 1 share.", variant: "destructive" });
+      return;
+    }
+    const slPct = ruleSl.trim() === "" ? undefined : Math.abs(Number(ruleSl));
+    const tgtPct = ruleTgt.trim() === "" ? undefined : Math.abs(Number(ruleTgt));
+    if ((slPct != null && !(slPct > 0 && slPct < 100)) || (tgtPct != null && !(tgtPct > 0))) {
+      toast({ title: "Invalid exit levels", description: "Stop loss and target must be positive percentages.", variant: "destructive" });
+      return;
+    }
+    if (
+      rulesRef.current.some(
+        (r) => r.status === "active" && r.symbol === liveSelected.symbol && r.triggerPrice === trigger,
+      )
+    ) {
+      toast({ title: "Rule already exists", description: `${liveSelected.symbol} at ₹${trigger.toFixed(2)} is already waiting.` });
+      return;
+    }
+    setAutoBuyRules((rs) => [
+      {
+        id: crypto.randomUUID(),
+        symbol: liveSelected.symbol,
+        name: liveSelected.name,
+        triggerPrice: trigger,
+        quantity: qty,
+        stopLossPct: slPct,
+        targetPct: tgtPct,
+        status: "active" as const,
+        createdAt: new Date().toISOString(),
+      },
+      ...rs,
+    ]);
+    setRuleTrigger("");
+    setRuleSl("");
+    setRuleTgt("");
+    toast({
+      title: "Auto-buy rule added",
+      description: `Buy ${qty} × ${liveSelected.symbol} when price drops to ₹${trigger.toFixed(2)}.`,
+    });
+  };
+
+  const cancelRule = (id: string) =>
+    setAutoBuyRules((rs) => rs.map((r) => (r.id === id ? { ...r, status: "cancelled" as const } : r)));
+  const removeRule = (id: string) => setAutoBuyRules((rs) => rs.filter((r) => r.id !== id));
+
+  // A triggered rule buys once at the live price, attaches its exit levels to
+  // the position, then switches itself off.
+  const handleAutoBuyTrigger = useCallback(
+    (ruleId: string, price: number) => {
+      const rule = rulesRef.current.find((r) => r.id === ruleId);
+      if (!rule || rule.status !== "active") return;
+      const total = price * rule.quantity;
+      if (total > balanceRef.current) {
+        setAutoBuyRules((rs) =>
+          rs.map((r) =>
+            r.id === ruleId
+              ? {
+                  ...r,
+                  status: "cancelled" as const,
+                  note: `Needed ₹${total.toFixed(2)}, balance was ₹${balanceRef.current.toFixed(2)}`,
+                }
+              : r,
+          ),
+        );
+        toast({
+          title: "Auto-buy skipped",
+          description: `${rule.symbol} hit ₹${price.toFixed(2)} but the balance was too low.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const slPrice = rule.stopLossPct != null ? price * (1 - rule.stopLossPct / 100) : undefined;
+      const tgtPrice = rule.targetPct != null ? price * (1 + rule.targetPct / 100) : undefined;
+      setBalance((b) => b - total);
+      setTrades((t) =>
+        [
+          {
+            id: crypto.randomUUID(),
+            symbol: rule.symbol,
+            name: rule.name,
+            side: "BUY" as const,
+            price,
+            quantity: rule.quantity,
+            total,
+            at: new Date().toISOString(),
+            stopLossPrice: slPrice,
+            targetPrice: tgtPrice,
+            time: new Date().toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          },
+          ...t,
+        ].slice(0, MAX_TRADES),
+      );
+      setAutoBuyRules((rs) =>
+        rs.map((r) =>
+          r.id === ruleId
+            ? { ...r, status: "filled" as const, filledPrice: price, filledAt: new Date().toISOString() }
+            : r,
+        ),
+      );
+      toast({
+        title: "Auto-buy executed",
+        description: `Bought ${rule.quantity} × ${rule.symbol} @ ₹${price.toFixed(2)}${
+          slPrice != null ? ` · SL ₹${slPrice.toFixed(2)}` : ""
+        }${tgtPrice != null ? ` · Target ₹${tgtPrice.toFixed(2)}` : ""}`,
+      });
+    },
+    [toast],
+  );
+
+  // Only arm auto-buys while the market is open, so stale closing prices can't fill.
+  const monitoredRules = useMemo(
+    () => (quotes?.marketStatus === "OPEN" ? autoBuyRules.filter((r) => r.status === "active") : []),
+    [quotes?.marketStatus, autoBuyRules],
+  );
+  useAutoBuyMonitoring(monitoredRules, priceMap, handleAutoBuyTrigger);
+
+  const activeRules = autoBuyRules.filter((r) => r.status === "active");
+
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <header className="mb-4 flex items-center gap-2">
@@ -897,6 +1079,161 @@ const DemoTrading = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Auto-buy rules */}
+      <div className="mt-4 rounded-lg border border-border bg-secondary/20 p-3">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Zap className="h-4 w-4 text-primary" />
+          <h3 className="text-xs font-semibold text-foreground">Auto-Buy Rules</h3>
+          <span className="text-[11px] text-muted-foreground">
+            Buys automatically when the price drops to your level · fires once
+          </span>
+          {activeRules.length > 0 && (
+            <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+              {activeRules.length} waiting
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">Stock</label>
+            <div className="rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm text-foreground">
+              {liveSelected ? liveSelected.symbol : "—"}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">Buy when price ≤ ₹</label>
+            <input
+              type="number"
+              min={0}
+              step="0.05"
+              value={ruleTrigger}
+              onChange={(e) => setRuleTrigger(e.target.value)}
+              disabled={!liveSelected}
+              placeholder={liveSelected && liveSelected.price > 0 ? (liveSelected.price * 0.98).toFixed(2) : "Price"}
+              className="w-28 rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">Quantity</label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={ruleQty}
+              onChange={(e) => setRuleQty(e.target.value)}
+              disabled={!liveSelected}
+              className="w-20 rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-chart-down">Stop loss %</label>
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              value={ruleSl}
+              onChange={(e) => setRuleSl(e.target.value)}
+              disabled={!liveSelected}
+              placeholder="2"
+              className="w-20 rounded-lg border border-chart-down/40 bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-chart-up">Target %</label>
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              value={ruleTgt}
+              onChange={(e) => setRuleTgt(e.target.value)}
+              disabled={!liveSelected}
+              placeholder="5"
+              className="w-20 rounded-lg border border-chart-up/40 bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
+            />
+          </div>
+          <button
+            onClick={handleAddRule}
+            disabled={!liveSelected}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Zap className="h-4 w-4" />
+            Add rule
+          </button>
+        </div>
+        {!liveSelected && (
+          <p className="mt-2 text-[11px] text-muted-foreground">Search and pick a stock above to create a rule.</p>
+        )}
+
+        {autoBuyRules.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {autoBuyRules.map((r) => {
+              const live = priceMap.get(r.symbol);
+              const awayPct =
+                r.status === "active" && live && live > 0 ? ((live - r.triggerPrice) / live) * 100 : null;
+              return (
+                <div
+                  key={r.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs"
+                >
+                  <span className="font-mono font-bold text-foreground">{r.symbol}</span>
+                  <span className="font-mono text-foreground">
+                    {r.quantity} × ≤ ₹{r.triggerPrice.toFixed(2)}
+                  </span>
+                  {r.stopLossPct != null && (
+                    <span className="font-mono text-chart-down">SL {r.stopLossPct}%</span>
+                  )}
+                  {r.targetPct != null && (
+                    <span className="font-mono text-chart-up">Tgt {r.targetPct}%</span>
+                  )}
+                  {r.status === "active" && (
+                    <>
+                      <span className="rounded bg-primary/15 px-1.5 py-0.5 font-semibold text-primary">
+                        Waiting
+                      </span>
+                      {awayPct != null && (
+                        <span className="font-mono text-muted-foreground">
+                          {awayPct.toFixed(2)}% away (₹{live!.toFixed(2)})
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {r.status === "filled" && (
+                    <span className="rounded bg-chart-up/15 px-1.5 py-0.5 font-semibold text-chart-up">
+                      Bought @ ₹{r.filledPrice?.toFixed(2)}
+                    </span>
+                  )}
+                  {r.status === "cancelled" && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-semibold text-muted-foreground">
+                      Off{r.note ? ` · ${r.note}` : ""}
+                    </span>
+                  )}
+                  <span className="ml-auto flex items-center gap-2">
+                    {r.status === "active" && (
+                      <button
+                        onClick={() => cancelRule(r.id)}
+                        className="rounded border border-border px-2 py-0.5 font-medium text-muted-foreground hover:text-foreground"
+                      >
+                        Turn off
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removeRule(r.id)}
+                      aria-label={`Remove auto-buy rule for ${r.symbol}`}
+                      className="text-muted-foreground hover:text-chart-down"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+
 
 
       {holdingsList.length > 0 && (
