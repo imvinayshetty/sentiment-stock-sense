@@ -235,6 +235,12 @@ const BasketAccuracy = () => {
   const { candidates, budgetMax, stocks, quoteSource } = useDailyBasket();
   const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
   const liveBySymbol = useMemo(() => new Map(stocks.map((s) => [s.symbol, s])), [stocks]);
+  const basketSymbols = useMemo(() => (data?.rows ?? []).map((r) => r.symbol), [data?.rows]);
+  const { data: breakeven } = useIntradayBreakeven(basketSymbols, budgetMax);
+  const beBySymbol = useMemo(
+    () => new Map((breakeven?.rows ?? []).map((r) => [r.symbol, r])),
+    [breakeven?.rows],
+  );
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const queryClient = useQueryClient();
