@@ -361,7 +361,13 @@ const BasketAccuracy = () => {
 
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {rows.map((r) => (
-              <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} quoteSource={quoteSource} />
+              <RowLine
+                key={r.symbol}
+                r={r}
+                live={liveBySymbol.get(r.symbol)}
+                quoteSource={quoteSource}
+                be={beBySymbol.get(r.symbol)}
+              />
             ))}
           </div>
         </>
