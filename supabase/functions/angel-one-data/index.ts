@@ -587,6 +587,142 @@ function mapHistorical(result: any) {
     .filter(Boolean);
 }
 
+// ---------- Intraday charges & margin (Angel One calculators) ----------
+// ScripMaster gives Angel One's internal instrument tokens, which the brokerage
+// and margin calculators require instead of the plain symbol. ~5MB JSON, so it
+// is fetched at most once per cold start and only when a symbol is not in the
+// curated ANGEL_TOKENS map.
+let scripTokenCache: Record<string, string> | null = null;
+let scripTokenPromise: Promise<Record<string, string>> | null = null;
+async function getScripTokens(): Promise<Record<string, string>> {
+  if (scripTokenCache) return scripTokenCache;
+  if (!scripTokenPromise) {
+    scripTokenPromise = (async () => {
+      const res = await fetch(
+        "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json",
+      );
+      const list = await res.json();
+      const map: Record<string, string> = {};
+      for (const row of Array.isArray(list) ? list : []) {
+        if (row?.exch_seg !== "NSE") continue;
+        const sym = String(row.symbol ?? "");
+        if (!sym.endsWith("-EQ")) continue;
+        map[sym.slice(0, -3)] = String(row.token);
+      }
+      scripTokenCache = map;
+      return map;
+    })().catch((e) => {
+      scripTokenPromise = null;
+      throw e;
+    });
+  }
+  return scripTokenPromise;
+}
+
+async function resolveAngelToken(symbol: string): Promise<string | null> {
+  const curated = ANGEL_TOKENS[symbol];
+  if (curated) return curated;
+  try {
+    const map = await getScripTokens();
+    return map[symbol] ?? null;
+  } catch (e) {
+    console.error("ScripMaster lookup failed:", e);
+    return null;
+  }
+}
+
+async function angelPost(supabase: any, path: string, body: unknown): Promise<any> {
+  const apiKey = Deno.env.get("ANGEL_ONE_API_KEY");
+  if (!apiKey) throw new Error("Angel One credentials missing");
+  const call = (jwt: string) => fetch(`https://apiconnect.angelone.in${path}`, {
+    method: "POST",
+    headers: { ...angelHeaders(apiKey), Authorization: `Bearer ${jwt}` },
+    body: JSON.stringify(body),
+  });
+  let jwt = await getAngelJwt(supabase);
+  let res = await call(jwt);
+  let json = await res.json().catch(() => null);
+  if (!json?.data && (res.status === 401 || /token|invalid|expired|unauthor/i.test(JSON.stringify(json?.message ?? "")))) {
+    jwt = await getAngelJwt(supabase, true);
+    res = await call(jwt);
+    json = await res.json().catch(() => null);
+  }
+  return json;
+}
+
+/**
+ * Round-trip (buy + sell) intraday charges for `qty` shares at `price`.
+ * Angel One's calculator rejects decimal prices with AB2001, so the price is
+ * sent as an integer string. Returns null when the API gives nothing usable.
+ */
+async function fetchRoundTripCharges(
+  supabase: any,
+  symbol: string,
+  token: string,
+  price: number,
+  qty: number,
+): Promise<number | null> {
+  const intPrice = String(Math.max(1, Math.round(price)));
+  const leg = (transaction_type: "BUY" | "SELL") => ({
+    product_type: "INTRADAY",
+    transaction_type,
+    quantity: String(qty),
+    price: intPrice,
+    exchange: "NSE",
+    symbol_name: symbol,
+    token,
+  });
+  try {
+    const json = await angelPost(supabase, "/rest/secure/angelbroking/brokerage/v1/estimateCharges", {
+      orders: [leg("BUY"), leg("SELL")],
+    });
+    const summary = json?.data?.summary ?? json?.data;
+    const total = Number(summary?.total_charges ?? summary?.totalCharges);
+    return Number.isFinite(total) && total > 0 ? total : null;
+  } catch (e) {
+    console.error(`estimateCharges failed for ${symbol}:`, e);
+    return null;
+  }
+}
+
+/** Statutory fallback used when the charges API is unavailable (round trip). */
+function estimateRoundTripCharges(price: number, qty: number): number {
+  const turnover = price * qty;
+  const stt = turnover * 0.00025;              // 0.025% sell side
+  const exchange = turnover * 2 * 0.0000322;   // 0.00322% per side
+  const sebi = turnover * 2 * 0.000001;
+  const stamp = turnover * 0.00003;            // 0.003% buy side
+  const gst = (exchange + sebi) * 0.18;
+  return stt + exchange + sebi + stamp + gst;
+}
+
+/** Intraday margin for one share. Falls back to 20% of price (5x leverage). */
+async function fetchIntradayMargin(
+  supabase: any,
+  token: string,
+  price: number,
+): Promise<{ margin: number; source: "api" | "estimate" }> {
+  try {
+    const json = await angelPost(supabase, "/rest/secure/angelbroking/margin/v1/batch", {
+      positions: [{
+        exchange: "NSE",
+        qty: 1,
+        price,
+        productType: "INTRADAY",
+        token,
+        tradeType: "BUY",
+      }],
+    });
+    const required = Number(json?.data?.totalMarginRequired);
+    if (Number.isFinite(required) && required > 0) return { margin: required, source: "api" };
+  } catch (e) {
+    console.error("margin batch failed:", e);
+  }
+  // AB4022 / null data: approximate NSE equity intraday margin.
+  return { margin: price * 0.2, source: "estimate" };
+}
+
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
