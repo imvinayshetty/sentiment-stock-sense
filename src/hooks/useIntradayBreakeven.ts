@@ -43,7 +43,10 @@ export interface BreakevenPayload {
  * day's forecast gain, plus a margin-sized share suggestion per stock.
  */
 export function useIntradayBreakeven(symbols: string[], budget: number | null, enabled = true) {
-  const list = [...symbols].sort().join(",");
+  const clean = Array.from(
+    new Set(symbols.map((s) => (s ?? "").trim().toUpperCase()).filter(Boolean)),
+  ).sort();
+  const list = clean.join(",");
   return useQuery<BreakevenPayload>({
     queryKey: ["intraday-breakeven", list, budget],
     queryFn: async () => {
@@ -67,7 +70,7 @@ export function useIntradayBreakeven(symbols: string[], budget: number | null, e
         clearTimeout(timer);
       }
     },
-    enabled: enabled && symbols.length > 0 && !!budget && budget > 0,
+    enabled: enabled && clean.length > 0 && !!budget && budget > 0,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
