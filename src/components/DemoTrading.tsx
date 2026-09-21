@@ -1129,8 +1129,8 @@ const DemoTrading = () => {
               {/* Buy column */}
               <td className="py-3 pr-4">
                 <button
-                  onClick={() => handleTrade("BUY")}
-                  disabled={!liveSelected || !canTrade}
+                  onClick={() => (buyMode === "auto" ? handleAddRule() : handleTrade("BUY"))}
+                  disabled={!liveSelected || (buyMode === "market" && !canTrade)}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-chart-up/40 bg-chart-up/10 px-4 py-2 text-sm font-semibold text-chart-up transition-colors hover:bg-chart-up/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ArrowUpCircle className="h-4 w-4" />
