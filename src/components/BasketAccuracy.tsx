@@ -192,6 +192,38 @@ const RowLine = ({
                 </div>
               )}
             </div>
+            {be && (
+              <div className="mt-2 space-y-1 border-t border-border pt-2">
+                <LiveStat
+                  label="Expected gain"
+                  value={`${inr(be.expectedGain)} (${be.expectedGainPct.toFixed(2)}%)`}
+                  tone={be.expectedGain >= 0 ? "text-chart-up" : "text-chart-down"}
+                />
+                <LiveStat
+                  label={`Charges${be.chargeSource === "estimate" ? " (approx.)" : ""}`}
+                  value={`${inr(be.breakevenPerShare)} (${be.breakevenPct.toFixed(2)}%)`}
+                />
+                <LiveStat
+                  label="Net after charges"
+                  value={inr(be.netPerShare)}
+                  tone={be.netPerShare >= 0 ? "text-chart-up" : "text-chart-down"}
+                />
+                <LiveStat
+                  label={`Margin/share${be.marginSource === "estimate" ? " (approx.)" : ""}`}
+                  value={inr(be.marginPerShare)}
+                />
+                {be.profitable && be.shares > 0 && (
+                  <LiveStat
+                    label="Suggested buy"
+                    value={`${be.shares} sh · ${inr(be.projectedProfit)} · margin ${inr(be.marginRequired)}`}
+                    tone="text-chart-up"
+                  />
+                )}
+                {!be.profitable && (
+                  <p className="text-[11px] text-chart-down">Skip: forecast move doesn't cover charges.</p>
+                )}
+              </div>
+            )}
           </div>,
           document.body,
         )}
