@@ -57,14 +57,17 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
   if (!isLoading && historicalData.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 card-glow">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-lg font-semibold text-foreground">Historical Price Data</h3>
             <p className="text-sm text-muted-foreground">Verified history is unavailable for this stock right now.</p>
           </div>
-          <div className="flex items-center gap-1 rounded-md bg-muted px-3 py-1">
-            <span className="h-2 w-2 rounded-full bg-muted-foreground" />
-            <span className="font-mono text-xs text-muted-foreground">NO DATA</span>
+          <div className="flex items-center gap-2">
+            {rangePicker}
+            <div className="flex items-center gap-1 rounded-md bg-muted px-3 py-1">
+              <span className="h-2 w-2 rounded-full bg-muted-foreground" />
+              <span className="font-mono text-xs text-muted-foreground">NO DATA</span>
+            </div>
           </div>
         </div>
       </div>
