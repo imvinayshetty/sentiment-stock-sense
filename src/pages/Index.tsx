@@ -114,7 +114,7 @@ const Index = () => {
             {/* Front: forecast chart + sentiment */}
             <div
               className="col-start-1 row-start-1 grid gap-6 lg:grid-cols-3"
-              style={{ backfaceVisibility: "hidden" }}
+              style={{ backfaceVisibility: "hidden", pointerEvents: candleFlipped ? "none" : "auto" }}
             >
               <div className="lg:col-span-2 animate-fade-in-up" style={{ animationDelay: "200ms" }}>
                 <PredictionChart symbol={selectedSymbol} onCandleView={() => setCandleFlipped(true)} />
@@ -126,7 +126,7 @@ const Index = () => {
             {/* Back: full-width candle chart */}
             <div
               className="col-start-1 row-start-1"
-              style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+              style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)", pointerEvents: candleFlipped ? "auto" : "none" }}
             >
               <FullCandleView symbol={selectedSymbol} onBack={() => setCandleFlipped(false)} />
             </div>
