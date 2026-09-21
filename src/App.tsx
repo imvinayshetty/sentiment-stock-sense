@@ -14,15 +14,15 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <AuthGate>
-        <BrowserRouter>
+      <BrowserRouter>
+        <AuthGate>
           <Routes>
             <Route path="/" element={<Index />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </BrowserRouter>
-      </AuthGate>
+        </AuthGate>
+      </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
