@@ -114,7 +114,7 @@ const PredictionChart = ({ symbol, onCandleView }: PredictionChartProps) => {
         <div className="flex flex-wrap items-center gap-2">
           {rangePicker}
           <button
-            onClick={() => setCandleOpen(true)}
+            onClick={onCandleView}
             className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
           >
             <CandlestickChart className="h-4 w-4" />
