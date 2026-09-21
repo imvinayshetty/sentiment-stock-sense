@@ -634,10 +634,15 @@ const DemoTrading = () => {
     rulesRef.current = autoBuyRules;
   }, [autoBuyRules]);
 
+  /**
+   * Auto-buy uses the SAME quantity and auto-exit inputs as a market order;
+   * only the entry price differs (a trigger level instead of the live price).
+   * Stop loss / target given in ₹ are converted to a % of the trigger price.
+   */
   const handleAddRule = () => {
     if (!liveSelected) return;
     const trigger = Number(ruleTrigger);
-    const qty = Math.floor(Number(ruleQty));
+    const qty = Math.max(1, Math.floor(quantity) || 1);
     if (!Number.isFinite(trigger) || trigger <= 0) {
       toast({ title: "Invalid trigger price", description: "Enter a price above 0.", variant: "destructive" });
       return;
@@ -650,14 +655,30 @@ const DemoTrading = () => {
       });
       return;
     }
-    if (!Number.isFinite(qty) || qty < 1) {
-      toast({ title: "Invalid quantity", description: "Enter at least 1 share.", variant: "destructive" });
-      return;
+    let slPct: number | undefined;
+    let tgtPct: number | undefined;
+    if (stopLossValue.trim() !== "") {
+      const v = Math.abs(Number(stopLossValue));
+      if (!Number.isFinite(v) || v <= 0) {
+        toast({ title: "Invalid stop loss", description: "Enter a number above 0.", variant: "destructive" });
+        return;
+      }
+      slPct = stopLossMethod === "percentage" ? v : ((trigger - v) / trigger) * 100;
     }
-    const slPct = ruleSl.trim() === "" ? undefined : Math.abs(Number(ruleSl));
-    const tgtPct = ruleTgt.trim() === "" ? undefined : Math.abs(Number(ruleTgt));
+    if (targetValue.trim() !== "") {
+      const v = Math.abs(Number(targetValue));
+      if (!Number.isFinite(v) || v <= 0) {
+        toast({ title: "Invalid target", description: "Enter a number above 0.", variant: "destructive" });
+        return;
+      }
+      tgtPct = targetMethod === "percentage" ? v : ((v - trigger) / trigger) * 100;
+    }
     if ((slPct != null && !(slPct > 0 && slPct < 100)) || (tgtPct != null && !(tgtPct > 0))) {
-      toast({ title: "Invalid exit levels", description: "Stop loss and target must be positive percentages.", variant: "destructive" });
+      toast({
+        title: "Invalid exit levels",
+        description: `Stop loss must be below ₹${trigger.toFixed(2)} and target above it.`,
+        variant: "destructive",
+      });
       return;
     }
     if (
@@ -683,13 +704,14 @@ const DemoTrading = () => {
       ...rs,
     ]);
     setRuleTrigger("");
-    setRuleSl("");
-    setRuleTgt("");
+    setStopLossValue("");
+    setTargetValue("");
     toast({
       title: "Auto-buy rule added",
       description: `Buy ${qty} × ${liveSelected.symbol} when price drops to ₹${trigger.toFixed(2)}.`,
     });
   };
+
 
   const cancelRule = (id: string) =>
     setAutoBuyRules((rs) => rs.map((r) => (r.id === id ? { ...r, status: "cancelled" as const } : r)));
