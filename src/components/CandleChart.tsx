@@ -84,7 +84,7 @@ const CandleTooltip = ({ active, payload }: any) => {
 
 interface CandleChartProps {
   data: CandleRow[];
-  height?: number;
+  height?: number | string;
 }
 
 const CandleChart = ({ data, height = 350 }: CandleChartProps) => {
