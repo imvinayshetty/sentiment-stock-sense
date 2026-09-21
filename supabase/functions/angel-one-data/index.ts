@@ -1340,6 +1340,8 @@ serve(async (req) => {
             marginRequired: 0,
             totalCharges: 0,
             projectedProfit: 0,
+            // Internal only: reused by the sizing loop, stripped before responding.
+            _token: token,
           };
         } catch (e) {
           console.error(`Breakeven failed for ${sym}:`, e);
@@ -1359,7 +1361,9 @@ serve(async (req) => {
         for (const r of profitable) {
           const shares = Math.floor(perStock / Math.max(1, r.marginPerShare));
           if (shares < 1) continue;
-          const legCharges = await fetchRoundTripCharges(supabase, r.symbol, (await resolveAngelToken(r.symbol)) ?? "", r.price, shares);
+          const legCharges = r._token
+            ? await fetchRoundTripCharges(supabase, r.symbol, r._token, r.price, shares)
+            : null;
           const totalCharges = legCharges ?? estimateRoundTripCharges(r.price, shares);
           r.shares = shares;
           r.marginRequired = Number((shares * r.marginPerShare).toFixed(2));
@@ -1368,11 +1372,19 @@ serve(async (req) => {
         }
       }
 
+      // A stock can clear breakeven yet still be unaffordable when one share's
+      // margin exceeds its budget slice — keep it out of the tradeable set so
+      // the UI can show a distinct "too expensive" state instead of a green badge.
+      const tradeable = profitable.filter((r) => r.shares > 0);
+      const unaffordable = profitable.filter((r) => r.shares === 0);
       const skipped = analysed.filter((r) => !r.profitable);
       const totalProjectedProfit = Number(
-        profitable.reduce((a, r) => a + r.projectedProfit, 0).toFixed(2),
+        tradeable.reduce((a, r) => a + r.projectedProfit, 0).toFixed(2),
       );
-      const totalMargin = Number(profitable.reduce((a, r) => a + r.marginRequired, 0).toFixed(2));
+      const totalMargin = Number(tradeable.reduce((a, r) => a + r.marginRequired, 0).toFixed(2));
+
+      // Strip the internal token before responding.
+      const stripToken = ({ _token, ...rest }: Record<string, unknown>) => rest;
 
       return new Response(JSON.stringify({
         success: true,
@@ -1380,8 +1392,9 @@ serve(async (req) => {
         marketStatus: market.status,
         istTime: market.istTime,
         priceSource: market.status === "OPEN" && liveQuotes.size > 0 ? "live" : "last-close",
-        rows: [...profitable, ...skipped],
-        profitableCount: profitable.length,
+        rows: [...tradeable, ...unaffordable, ...skipped].map(stripToken),
+        profitableCount: tradeable.length,
+        unaffordableCount: unaffordable.length,
         skippedCount: skipped.length,
         totalProjectedProfit,
         totalMargin,
