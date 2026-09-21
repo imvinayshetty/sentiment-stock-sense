@@ -91,11 +91,17 @@ export function useHistoricalData(symbol: string, range: HistoryRange = "1mo") {
       const result = await callFunction("angel-one-data", { action: "historical", symbol, range });
       if (!result.success) throw new Error(result.error);
 
+      // Longer windows need the year on the axis to stay readable.
+      const labelOpts: Intl.DateTimeFormatOptions =
+        range === "1y" || range === "3y"
+          ? { month: "short", year: "2-digit" }
+          : { month: "short", day: "numeric" };
+
       // Transform candle data [timestamp, open, high, low, close, volume].
       // candle[0] is normally an ISO string but defensively handle Unix seconds.
       return (result.data || []).map((candle: any[]) => ({
         date: new Date(isNaN(Number(candle[0])) ? candle[0] : Number(candle[0]) * 1000)
-          .toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+          .toLocaleDateString("en-IN", labelOpts),
         actual: candle[4], // close price
         open: candle[1],
         high: candle[2],
