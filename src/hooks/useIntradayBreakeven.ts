@@ -31,6 +31,8 @@ export interface BreakevenPayload {
   priceSource: "live" | "last-close";
   rows: BreakevenRow[];
   profitableCount: number;
+  /** Clears breakeven but one share's margin exceeds its budget slice. */
+  unaffordableCount?: number;
   skippedCount: number;
   totalProjectedProfit: number;
   totalMargin: number;
