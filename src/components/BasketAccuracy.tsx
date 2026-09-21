@@ -4,7 +4,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useDailyBasket, useBasketAccuracy, resetBasket, type BasketRow } from "@/hooks/useDailyBasket";
+import { useIntradayBreakeven, type BreakevenRow } from "@/hooks/useIntradayBreakeven";
 import type { StockQuote } from "@/lib/stockData";
+
+const inr = (v: number) =>
+  `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const riskTone = (score: number) =>
   score <= 33 ? "text-chart-up" : score <= 66 ? "text-chart-neutral" : "text-chart-down";
@@ -35,7 +39,17 @@ const LiveStat = ({ label, value, tone }: { label: string; value: string; tone?:
 const TOOLTIP_WIDTH = 260;
 const TOOLTIP_EST_HEIGHT = 320;
 
-const RowLine = ({ r, live, quoteSource }: { r: BasketRow; live?: StockQuote; quoteSource?: "live" | "last-close" }) => {
+const RowLine = ({
+  r,
+  live,
+  quoteSource,
+  be,
+}: {
+  r: BasketRow;
+  live?: StockQuote;
+  quoteSource?: "live" | "last-close";
+  be?: BreakevenRow;
+}) => {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number; flip: boolean } | null>(null);
@@ -109,6 +123,18 @@ const RowLine = ({ r, live, quoteSource }: { r: BasketRow; live?: StockQuote; qu
               : "awaiting live price"
             : `${r.correct ? "+" : "−"}₹${Math.abs(r.close_price - r.base_price).toFixed(2)}/sh`}
         </div>
+        {be && (
+          <div className="mt-1 flex flex-col gap-0.5 border-t border-border/60 pt-1 font-mono text-[10px]">
+            <span className={be.profitable ? "text-chart-up" : "text-chart-down"}>
+              {be.profitable ? "net " : "short "}
+              {be.netPerShare >= 0 ? "+" : "−"}
+              {inr(Math.abs(be.netPerShare))}/sh
+            </span>
+            <span className="text-muted-foreground">
+              cost {inr(be.breakevenPerShare)} · margin {inr(be.marginPerShare)}/sh
+            </span>
+          </div>
+        )}
       </button>
       {open &&
         pos &&
@@ -166,6 +192,38 @@ const RowLine = ({ r, live, quoteSource }: { r: BasketRow; live?: StockQuote; qu
                 </div>
               )}
             </div>
+            {be && (
+              <div className="mt-2 space-y-1 border-t border-border pt-2">
+                <LiveStat
+                  label="Expected gain"
+                  value={`${inr(be.expectedGain)} (${be.expectedGainPct.toFixed(2)}%)`}
+                  tone={be.expectedGain >= 0 ? "text-chart-up" : "text-chart-down"}
+                />
+                <LiveStat
+                  label={`Charges${be.chargeSource === "estimate" ? " (approx.)" : ""}`}
+                  value={`${inr(be.breakevenPerShare)} (${be.breakevenPct.toFixed(2)}%)`}
+                />
+                <LiveStat
+                  label="Net after charges"
+                  value={inr(be.netPerShare)}
+                  tone={be.netPerShare >= 0 ? "text-chart-up" : "text-chart-down"}
+                />
+                <LiveStat
+                  label={`Margin/share${be.marginSource === "estimate" ? " (approx.)" : ""}`}
+                  value={inr(be.marginPerShare)}
+                />
+                {be.profitable && be.shares > 0 && (
+                  <LiveStat
+                    label="Suggested buy"
+                    value={`${be.shares} sh · ${inr(be.projectedProfit)} · margin ${inr(be.marginRequired)}`}
+                    tone="text-chart-up"
+                  />
+                )}
+                {!be.profitable && (
+                  <p className="text-[11px] text-chart-down">Skip: forecast move doesn't cover charges.</p>
+                )}
+              </div>
+            )}
           </div>,
           document.body,
         )}
@@ -177,6 +235,12 @@ const BasketAccuracy = () => {
   const { candidates, budgetMax, stocks, quoteSource } = useDailyBasket();
   const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
   const liveBySymbol = useMemo(() => new Map(stocks.map((s) => [s.symbol, s])), [stocks]);
+  const basketSymbols = useMemo(() => (data?.rows ?? []).map((r) => r.symbol), [data?.rows]);
+  const { data: breakeven } = useIntradayBreakeven(basketSymbols, budgetMax);
+  const beBySymbol = useMemo(
+    () => new Map((breakeven?.rows ?? []).map((r) => [r.symbol, r])),
+    [breakeven?.rows],
+  );
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const queryClient = useQueryClient();
@@ -297,7 +361,13 @@ const BasketAccuracy = () => {
 
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {rows.map((r) => (
-              <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} quoteSource={quoteSource} />
+              <RowLine
+                key={r.symbol}
+                r={r}
+                live={liveBySymbol.get(r.symbol)}
+                quoteSource={quoteSource}
+                be={beBySymbol.get(r.symbol)}
+              />
             ))}
           </div>
         </>
