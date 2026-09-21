@@ -1080,6 +1080,161 @@ const DemoTrading = () => {
         </table>
       </div>
 
+      {/* Auto-buy rules */}
+      <div className="mt-4 rounded-lg border border-border bg-secondary/20 p-3">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Zap className="h-4 w-4 text-primary" />
+          <h3 className="text-xs font-semibold text-foreground">Auto-Buy Rules</h3>
+          <span className="text-[11px] text-muted-foreground">
+            Buys automatically when the price drops to your level · fires once
+          </span>
+          {activeRules.length > 0 && (
+            <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+              {activeRules.length} waiting
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">Stock</label>
+            <div className="rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm text-foreground">
+              {liveSelected ? liveSelected.symbol : "—"}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">Buy when price ≤ ₹</label>
+            <input
+              type="number"
+              min={0}
+              step="0.05"
+              value={ruleTrigger}
+              onChange={(e) => setRuleTrigger(e.target.value)}
+              disabled={!liveSelected}
+              placeholder={liveSelected && liveSelected.price > 0 ? (liveSelected.price * 0.98).toFixed(2) : "Price"}
+              className="w-28 rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">Quantity</label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={ruleQty}
+              onChange={(e) => setRuleQty(e.target.value)}
+              disabled={!liveSelected}
+              className="w-20 rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-chart-down">Stop loss %</label>
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              value={ruleSl}
+              onChange={(e) => setRuleSl(e.target.value)}
+              disabled={!liveSelected}
+              placeholder="2"
+              className="w-20 rounded-lg border border-chart-down/40 bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-chart-up">Target %</label>
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              value={ruleTgt}
+              onChange={(e) => setRuleTgt(e.target.value)}
+              disabled={!liveSelected}
+              placeholder="5"
+              className="w-20 rounded-lg border border-chart-up/40 bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
+            />
+          </div>
+          <button
+            onClick={handleAddRule}
+            disabled={!liveSelected}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Zap className="h-4 w-4" />
+            Add rule
+          </button>
+        </div>
+        {!liveSelected && (
+          <p className="mt-2 text-[11px] text-muted-foreground">Search and pick a stock above to create a rule.</p>
+        )}
+
+        {autoBuyRules.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {autoBuyRules.map((r) => {
+              const live = priceMap.get(r.symbol);
+              const awayPct =
+                r.status === "active" && live && live > 0 ? ((live - r.triggerPrice) / live) * 100 : null;
+              return (
+                <div
+                  key={r.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs"
+                >
+                  <span className="font-mono font-bold text-foreground">{r.symbol}</span>
+                  <span className="font-mono text-foreground">
+                    {r.quantity} × ≤ ₹{r.triggerPrice.toFixed(2)}
+                  </span>
+                  {r.stopLossPct != null && (
+                    <span className="font-mono text-chart-down">SL {r.stopLossPct}%</span>
+                  )}
+                  {r.targetPct != null && (
+                    <span className="font-mono text-chart-up">Tgt {r.targetPct}%</span>
+                  )}
+                  {r.status === "active" && (
+                    <>
+                      <span className="rounded bg-primary/15 px-1.5 py-0.5 font-semibold text-primary">
+                        Waiting
+                      </span>
+                      {awayPct != null && (
+                        <span className="font-mono text-muted-foreground">
+                          {awayPct.toFixed(2)}% away (₹{live!.toFixed(2)})
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {r.status === "filled" && (
+                    <span className="rounded bg-chart-up/15 px-1.5 py-0.5 font-semibold text-chart-up">
+                      Bought @ ₹{r.filledPrice?.toFixed(2)}
+                    </span>
+                  )}
+                  {r.status === "cancelled" && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-semibold text-muted-foreground">
+                      Off{r.note ? ` · ${r.note}` : ""}
+                    </span>
+                  )}
+                  <span className="ml-auto flex items-center gap-2">
+                    {r.status === "active" && (
+                      <button
+                        onClick={() => cancelRule(r.id)}
+                        className="rounded border border-border px-2 py-0.5 font-medium text-muted-foreground hover:text-foreground"
+                      >
+                        Turn off
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removeRule(r.id)}
+                      aria-label={`Remove auto-buy rule for ${r.symbol}`}
+                      className="text-muted-foreground hover:text-chart-down"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+
+
 
       {holdingsList.length > 0 && (
         <div className="mt-4">
