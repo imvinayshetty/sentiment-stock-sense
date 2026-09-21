@@ -71,7 +71,7 @@ const FullCandleView = ({ symbol, onBack }: FullCandleViewProps) => {
   }, [widgetConfig]);
 
   return (
-    <div className="w-full rounded-xl border border-border bg-card p-5 card-glow">
+    <div className="flex h-full w-full flex-col rounded-xl border border-border bg-card p-5 card-glow">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground">
@@ -116,7 +116,7 @@ const FullCandleView = ({ symbol, onBack }: FullCandleViewProps) => {
 
       <div
         ref={containerRef}
-        className="tradingview-widget-container h-[480px] w-full rounded-lg border border-border bg-background overflow-hidden"
+        className="tradingview-widget-container min-h-[420px] w-full flex-1 rounded-lg border border-border bg-background overflow-hidden"
       />
     </div>
   );
