@@ -1068,7 +1068,7 @@ const DemoTrading = () => {
               <td className="py-3 pr-4">
                 <button
                   onClick={() => handleTrade("BUY")}
-                  disabled={!liveSelected}
+                  disabled={!liveSelected || !canTrade}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-chart-up/40 bg-chart-up/10 px-4 py-2 text-sm font-semibold text-chart-up transition-colors hover:bg-chart-up/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ArrowUpCircle className="h-4 w-4" />
@@ -1080,7 +1080,7 @@ const DemoTrading = () => {
               <td className="py-3">
                 <button
                   onClick={() => handleTrade("SELL")}
-                  disabled={!liveSelected}
+                  disabled={!liveSelected || !canTrade}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-chart-down/40 bg-chart-down/10 px-4 py-2 text-sm font-semibold text-chart-down transition-colors hover:bg-chart-down/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ArrowDownCircle className="h-4 w-4" />

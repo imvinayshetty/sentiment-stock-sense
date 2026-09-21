@@ -90,7 +90,17 @@ export function useDailyBasket() {
     return affordable.slice(0, 30).map((s) => s.symbol);
   }, [ranked, budgetMax]);
 
-  return { stocks, ranked, topBuy, suggestedQty, candidates, budgetMax, isLoading, marketStatus: quotes?.marketStatus };
+  return {
+    stocks,
+    ranked,
+    topBuy,
+    suggestedQty,
+    candidates,
+    budgetMax,
+    isLoading,
+    marketStatus: quotes?.marketStatus,
+    quoteSource: quotes?.source,
+  };
 
 }
 

@@ -35,7 +35,7 @@ const LiveStat = ({ label, value, tone }: { label: string; value: string; tone?:
 const TOOLTIP_WIDTH = 260;
 const TOOLTIP_EST_HEIGHT = 320;
 
-const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => {
+const RowLine = ({ r, live, quoteSource }: { r: BasketRow; live?: StockQuote; quoteSource?: "live" | "last-close" }) => {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number; flip: boolean } | null>(null);
@@ -133,7 +133,7 @@ const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => {
             </div>
             {live ? (
               <div className="space-y-1">
-                <LiveStat label="Live price" value={`₹${live.price.toFixed(2)}`} />
+                <LiveStat label={quoteSource === "live" ? "Live price" : "Latest close"} value={`₹${live.price.toFixed(2)}`} />
                 <LiveStat
                   label="Change"
                   value={`${live.change >= 0 ? "+" : ""}₹${live.change.toFixed(2)} (${live.changePercent >= 0 ? "+" : ""}${live.changePercent.toFixed(2)}%)`}
@@ -174,7 +174,7 @@ const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => {
 };
 
 const BasketAccuracy = () => {
-  const { candidates, budgetMax, stocks } = useDailyBasket();
+  const { candidates, budgetMax, stocks, quoteSource } = useDailyBasket();
   const { data, isLoading } = useBasketAccuracy(budgetMax != null ? candidates : []);
   const liveBySymbol = useMemo(() => new Map(stocks.map((s) => [s.symbol, s])), [stocks]);
   const [openDay, setOpenDay] = useState<string | null>(null);
@@ -297,7 +297,7 @@ const BasketAccuracy = () => {
 
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {rows.map((r) => (
-              <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} />
+              <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} quoteSource={quoteSource} />
             ))}
           </div>
         </>
@@ -343,7 +343,7 @@ const BasketAccuracy = () => {
                   {isOpen && (
                     <div className="grid grid-cols-2 gap-2 border-t border-border p-2 sm:grid-cols-3 lg:grid-cols-5">
                       {day.rows.map((r) => (
-                        <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} />
+                        <RowLine key={r.symbol} r={r} live={liveBySymbol.get(r.symbol)} quoteSource={quoteSource} />
                       ))}
                     </div>
                   )}
