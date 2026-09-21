@@ -205,9 +205,9 @@ const DemoTrading = () => {
     loadState<AutoBuyRule[]>("autoBuyRules", []),
   );
   const [ruleTrigger, setRuleTrigger] = useState("");
-  const [ruleQty, setRuleQty] = useState("1");
-  const [ruleSl, setRuleSl] = useState("");
-  const [ruleTgt, setRuleTgt] = useState("");
+  /** "market" buys instantly at the live price, "auto" waits for a trigger price. */
+  const [buyMode, setBuyMode] = useState<"market" | "auto">("market");
+
   const { data: quotes, isLoading } = useStockQuotes();
   const canTrade = quotes?.marketStatus === "OPEN" && quotes.source === "live";
   const { toast } = useToast();
@@ -634,10 +634,15 @@ const DemoTrading = () => {
     rulesRef.current = autoBuyRules;
   }, [autoBuyRules]);
 
+  /**
+   * Auto-buy uses the SAME quantity and auto-exit inputs as a market order;
+   * only the entry price differs (a trigger level instead of the live price).
+   * Stop loss / target given in ₹ are converted to a % of the trigger price.
+   */
   const handleAddRule = () => {
     if (!liveSelected) return;
     const trigger = Number(ruleTrigger);
-    const qty = Math.floor(Number(ruleQty));
+    const qty = Math.max(1, Math.floor(quantity) || 1);
     if (!Number.isFinite(trigger) || trigger <= 0) {
       toast({ title: "Invalid trigger price", description: "Enter a price above 0.", variant: "destructive" });
       return;
@@ -650,14 +655,30 @@ const DemoTrading = () => {
       });
       return;
     }
-    if (!Number.isFinite(qty) || qty < 1) {
-      toast({ title: "Invalid quantity", description: "Enter at least 1 share.", variant: "destructive" });
-      return;
+    let slPct: number | undefined;
+    let tgtPct: number | undefined;
+    if (stopLossValue.trim() !== "") {
+      const v = Math.abs(Number(stopLossValue));
+      if (!Number.isFinite(v) || v <= 0) {
+        toast({ title: "Invalid stop loss", description: "Enter a number above 0.", variant: "destructive" });
+        return;
+      }
+      slPct = stopLossMethod === "percentage" ? v : ((trigger - v) / trigger) * 100;
     }
-    const slPct = ruleSl.trim() === "" ? undefined : Math.abs(Number(ruleSl));
-    const tgtPct = ruleTgt.trim() === "" ? undefined : Math.abs(Number(ruleTgt));
+    if (targetValue.trim() !== "") {
+      const v = Math.abs(Number(targetValue));
+      if (!Number.isFinite(v) || v <= 0) {
+        toast({ title: "Invalid target", description: "Enter a number above 0.", variant: "destructive" });
+        return;
+      }
+      tgtPct = targetMethod === "percentage" ? v : ((v - trigger) / trigger) * 100;
+    }
     if ((slPct != null && !(slPct > 0 && slPct < 100)) || (tgtPct != null && !(tgtPct > 0))) {
-      toast({ title: "Invalid exit levels", description: "Stop loss and target must be positive percentages.", variant: "destructive" });
+      toast({
+        title: "Invalid exit levels",
+        description: `Stop loss must be below ₹${trigger.toFixed(2)} and target above it.`,
+        variant: "destructive",
+      });
       return;
     }
     if (
@@ -683,13 +704,14 @@ const DemoTrading = () => {
       ...rs,
     ]);
     setRuleTrigger("");
-    setRuleSl("");
-    setRuleTgt("");
+    setStopLossValue("");
+    setTargetValue("");
     toast({
       title: "Auto-buy rule added",
       description: `Buy ${qty} × ${liveSelected.symbol} when price drops to ₹${trigger.toFixed(2)}.`,
     });
   };
+
 
   const cancelRule = (id: string) =>
     setAutoBuyRules((rs) => rs.map((r) => (r.id === id ? { ...r, status: "cancelled" as const } : r)));
@@ -942,28 +964,68 @@ const DemoTrading = () => {
                 )}
               </td>
 
-              {/* Price column */}
+              {/* Price column — market price or an auto-buy trigger price */}
               <td className="py-3 pr-4">
-                {liveSelected ? (
-                  <div>
-                    <div className="font-mono text-base font-bold text-foreground">
-                      ₹{liveSelected.price.toFixed(2)}
-                    </div>
-                    <div
-                      className={`font-mono text-xs ${
-                        liveSelected.change >= 0
-                          ? "text-chart-up"
-                          : "text-chart-down"
-                      }`}
-                    >
-                      {liveSelected.change >= 0 ? "+" : ""}
-                      {liveSelected.changePercent.toFixed(2)}%
-                    </div>
+                <div className="w-40">
+                  <div className="mb-1.5 flex rounded-lg border border-border p-0.5 text-[11px]">
+                    {(["market", "auto"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setBuyMode(m)}
+                        disabled={!liveSelected}
+                        className={`flex-1 rounded-md px-1.5 py-0.5 font-medium transition-colors disabled:opacity-40 ${
+                          buyMode === m
+                            ? "bg-primary/15 text-primary"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {m === "market" ? "Market price" : "Auto Buy"}
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
-                )}
+                  {liveSelected ? (
+                    <>
+                      <div className="font-mono text-base font-bold text-foreground">
+                        ₹{liveSelected.price.toFixed(2)}
+                      </div>
+                      <div
+                        className={`font-mono text-xs ${
+                          liveSelected.change >= 0
+                            ? "text-chart-up"
+                            : "text-chart-down"
+                        }`}
+                      >
+                        {liveSelected.change >= 0 ? "+" : ""}
+                        {liveSelected.changePercent.toFixed(2)}%
+                      </div>
+                      {buyMode === "auto" && (
+                        <div className="mt-1.5">
+                          <label className="mb-1 block text-[11px] text-muted-foreground">
+                            Buy when price ≤ ₹
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.05"
+                            value={ruleTrigger}
+                            onChange={(e) => setRuleTrigger(e.target.value)}
+                            placeholder={
+                              liveSelected.price > 0
+                                ? (liveSelected.price * 0.98).toFixed(2)
+                                : "Price"
+                            }
+                            className="w-full rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </div>
               </td>
+
 
               {/* Quantity column */}
               <td className="py-3 pr-4">
@@ -975,7 +1037,7 @@ const DemoTrading = () => {
                   onChange={(e) =>
                     setQuantity(Math.max(1, Math.floor(Number(e.target.value)) || 1))
                   }
-                   disabled={!liveSelected || !canTrade}
+                   disabled={!liveSelected || (buyMode === "market" && !canTrade)}
                   className="w-20 rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
@@ -1008,7 +1070,7 @@ const DemoTrading = () => {
                         type="number"
                         value={stopLossValue}
                         onChange={(e) => setStopLossValue(e.target.value)}
-                   disabled={!liveSelected || !canTrade}
+                   disabled={!liveSelected}
                         placeholder={stopLossMethod === "percentage" ? "2 (%)" : "Price"}
                         className="w-full rounded-lg border border-chart-down/40 bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                       />
@@ -1067,8 +1129,8 @@ const DemoTrading = () => {
               {/* Buy column */}
               <td className="py-3 pr-4">
                 <button
-                  onClick={() => handleTrade("BUY")}
-                  disabled={!liveSelected || !canTrade}
+                  onClick={() => (buyMode === "auto" ? handleAddRule() : handleTrade("BUY"))}
+                  disabled={!liveSelected || (buyMode === "market" && !canTrade)}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-chart-up/40 bg-chart-up/10 px-4 py-2 text-sm font-semibold text-chart-up transition-colors hover:bg-chart-up/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ArrowUpCircle className="h-4 w-4" />
@@ -1092,13 +1154,13 @@ const DemoTrading = () => {
         </table>
       </div>
 
-      {/* Auto-buy rules */}
+      {/* Auto-buy rules — created from the trade row above (Auto Buy mode) */}
       <div className="mt-4 rounded-lg border border-border bg-secondary/20 p-3">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Zap className="h-4 w-4 text-primary" />
           <h3 className="text-xs font-semibold text-foreground">Auto-Buy Rules</h3>
           <span className="text-[11px] text-muted-foreground">
-            Buys automatically when the price drops to your level · fires once
+            Pick “Auto Buy” in the price column above to set one up · fires once
           </span>
           {activeRules.length > 0 && (
             <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
@@ -1106,77 +1168,10 @@ const DemoTrading = () => {
             </span>
           )}
         </div>
-
-        <div className="flex flex-wrap items-end gap-2">
-          <div>
-            <label className="mb-1 block text-[11px] text-muted-foreground">Stock</label>
-            <div className="rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm text-foreground">
-              {liveSelected ? liveSelected.symbol : "—"}
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-muted-foreground">Buy when price ≤ ₹</label>
-            <input
-              type="number"
-              min={0}
-              step="0.05"
-              value={ruleTrigger}
-              onChange={(e) => setRuleTrigger(e.target.value)}
-              disabled={!liveSelected}
-              placeholder={liveSelected && liveSelected.price > 0 ? (liveSelected.price * 0.98).toFixed(2) : "Price"}
-              className="w-28 rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-muted-foreground">Quantity</label>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={ruleQty}
-              onChange={(e) => setRuleQty(e.target.value)}
-              disabled={!liveSelected}
-              className="w-20 rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-chart-down">Stop loss %</label>
-            <input
-              type="number"
-              min={0}
-              step="0.5"
-              value={ruleSl}
-              onChange={(e) => setRuleSl(e.target.value)}
-              disabled={!liveSelected}
-              placeholder="2"
-              className="w-20 rounded-lg border border-chart-down/40 bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-chart-up">Target %</label>
-            <input
-              type="number"
-              min={0}
-              step="0.5"
-              value={ruleTgt}
-              onChange={(e) => setRuleTgt(e.target.value)}
-              disabled={!liveSelected}
-              placeholder="5"
-              className="w-20 rounded-lg border border-chart-up/40 bg-background py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
-            />
-          </div>
-          <button
-            onClick={handleAddRule}
-            disabled={!liveSelected}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Zap className="h-4 w-4" />
-            Add rule
-          </button>
-        </div>
-        {!liveSelected && (
-          <p className="mt-2 text-[11px] text-muted-foreground">Search and pick a stock above to create a rule.</p>
+        {autoBuyRules.length === 0 && (
+          <p className="text-[11px] text-muted-foreground">No rules yet.</p>
         )}
+
 
         {autoBuyRules.length > 0 && (
           <div className="mt-3 space-y-1">
