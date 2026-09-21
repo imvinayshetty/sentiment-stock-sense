@@ -1,14 +1,43 @@
+import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { useHistoricalData, useForecast } from "@/hooks/useAngelOneData";
+import { CandlestickChart } from "lucide-react";
+import { useHistoricalData, useForecast, type HistoryRange } from "@/hooks/useAngelOneData";
+import CandleChart from "@/components/CandleChart";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface PredictionChartProps {
   symbol: string;
 }
 
+const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
+  { value: "15d", label: "15 days" },
+  { value: "1mo", label: "1 month" },
+  { value: "1y", label: "1 year" },
+  { value: "3y", label: "3 years" },
+];
+
 const PredictionChart = ({ symbol }: PredictionChartProps) => {
-  const { data: histData, isLoading } = useHistoricalData(symbol);
+  const [range, setRange] = useState<HistoryRange>("1mo");
+  const [candleOpen, setCandleOpen] = useState(false);
+  const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)?.label ?? "1 month";
+  const { data: histData, isLoading } = useHistoricalData(symbol, range);
   const historicalData = histData ?? [];
   const { data: forecastData } = useForecast(symbol);
+
+  const rangePicker = (
+    <select
+      value={range}
+      onChange={(e) => setRange(e.target.value as HistoryRange)}
+      aria-label="Price history range"
+      className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+    >
+      {RANGE_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
 
   if (isLoading && historicalData.length === 0) {
     return (
