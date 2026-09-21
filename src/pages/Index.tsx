@@ -8,6 +8,7 @@ import SettingsDialog from "@/components/SettingsDialog";
 import StockDetail from "@/components/StockDetail";
 import PredictionChart from "@/components/PredictionChart";
 import SentimentGauge from "@/components/SentimentGauge";
+import FullCandleView from "@/components/FullCandleView";
 import PriceTarget from "@/components/PriceTarget";
 import BasketAccuracy from "@/components/BasketAccuracy";
 import BasketComparison from "@/components/BasketComparison";
@@ -20,6 +21,7 @@ import { useStockQuotes, useForecast } from "@/hooks/useAngelOneData";
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
+  const [candleFlipped, setCandleFlipped] = useState(false);
   const { data: quotes, isFetching: quotesFetching, refetch } = useStockQuotes();
   const { isFetching: forecastFetching } = useForecast(selectedSymbol);
   const isRefreshing = quotesFetching || forecastFetching;
