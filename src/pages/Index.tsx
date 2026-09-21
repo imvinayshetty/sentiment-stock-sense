@@ -29,8 +29,7 @@ const Index = () => {
 
   const handleRefresh = () => {
     refetch();
-    // Force an actual refetch (refetchType: "active") so queries with long
-    // staleTime (e.g. news-sentiment at 65min) don't silently skip refreshing.
+    // Force active chart and basket requests to refresh with the quote feed.
     queryClient.invalidateQueries({ queryKey: ["historical", selectedSymbol], refetchType: "active" });
     // Prefix-match so HoldingsSellPanel rows (each keyed by their own symbol) also refresh.
     queryClient.invalidateQueries({ queryKey: ["forecast"], refetchType: "active" });
