@@ -82,11 +82,13 @@ export function useStockQuotes() {
   });
 }
 
-export function useHistoricalData(symbol: string) {
+export type HistoryRange = "15d" | "1mo" | "1y" | "3y";
+
+export function useHistoricalData(symbol: string, range: HistoryRange = "1mo") {
   return useQuery<PredictionData[]>({
-    queryKey: ["historical", symbol],
+    queryKey: ["historical", symbol, range],
     queryFn: async () => {
-      const result = await callFunction("angel-one-data", { action: "historical", symbol });
+      const result = await callFunction("angel-one-data", { action: "historical", symbol, range });
       if (!result.success) throw new Error(result.error);
 
       // Transform candle data [timestamp, open, high, low, close, volume].
