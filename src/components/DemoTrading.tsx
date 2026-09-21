@@ -964,28 +964,68 @@ const DemoTrading = () => {
                 )}
               </td>
 
-              {/* Price column */}
+              {/* Price column — market price or an auto-buy trigger price */}
               <td className="py-3 pr-4">
-                {liveSelected ? (
-                  <div>
-                    <div className="font-mono text-base font-bold text-foreground">
-                      ₹{liveSelected.price.toFixed(2)}
-                    </div>
-                    <div
-                      className={`font-mono text-xs ${
-                        liveSelected.change >= 0
-                          ? "text-chart-up"
-                          : "text-chart-down"
-                      }`}
-                    >
-                      {liveSelected.change >= 0 ? "+" : ""}
-                      {liveSelected.changePercent.toFixed(2)}%
-                    </div>
+                <div className="w-40">
+                  <div className="mb-1.5 flex rounded-lg border border-border p-0.5 text-[11px]">
+                    {(["market", "auto"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setBuyMode(m)}
+                        disabled={!liveSelected}
+                        className={`flex-1 rounded-md px-1.5 py-0.5 font-medium transition-colors disabled:opacity-40 ${
+                          buyMode === m
+                            ? "bg-primary/15 text-primary"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {m === "market" ? "Market price" : "Auto Buy"}
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
-                )}
+                  {liveSelected ? (
+                    <>
+                      <div className="font-mono text-base font-bold text-foreground">
+                        ₹{liveSelected.price.toFixed(2)}
+                      </div>
+                      <div
+                        className={`font-mono text-xs ${
+                          liveSelected.change >= 0
+                            ? "text-chart-up"
+                            : "text-chart-down"
+                        }`}
+                      >
+                        {liveSelected.change >= 0 ? "+" : ""}
+                        {liveSelected.changePercent.toFixed(2)}%
+                      </div>
+                      {buyMode === "auto" && (
+                        <div className="mt-1.5">
+                          <label className="mb-1 block text-[11px] text-muted-foreground">
+                            Buy when price ≤ ₹
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.05"
+                            value={ruleTrigger}
+                            onChange={(e) => setRuleTrigger(e.target.value)}
+                            placeholder={
+                              liveSelected.price > 0
+                                ? (liveSelected.price * 0.98).toFixed(2)
+                                : "Price"
+                            }
+                            className="w-full rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </div>
               </td>
+
 
               {/* Quantity column */}
               <td className="py-3 pr-4">
