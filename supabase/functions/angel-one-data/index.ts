@@ -1301,7 +1301,7 @@ serve(async (req) => {
           const expectedGain = predicted - price;
 
           const token = await resolveAngelToken(sym);
-          const marginInfo = token
+          const marginInfo = token != null
             ? await fetchIntradayMargin(supabase, token, price)
             : { margin: price * 0.2, source: "estimate" as const };
 
