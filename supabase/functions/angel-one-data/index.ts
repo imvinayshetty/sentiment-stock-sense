@@ -633,20 +633,23 @@ serve(async (req) => {
       }
       const stockInfo = resolveSymbolInfo(symbol);
 
-      // Supported windows for the price-history chart. Yahoo has no 3y range,
-      // so 3 years is fetched as 5y weekly candles and trimmed below.
-      const RANGES: Record<string, { range: string; interval: string; keep?: number }> = {
-        "15d": { range: "1mo", interval: "1d", keep: 15 },
+      // Intraday candles keep the short windows useful, while longer windows
+      // use daily or weekly candles to stay readable and within provider limits.
+      const RANGES: Record<string, { range: string; interval: string }> = {
+        "1d": { range: "1d", interval: "5m" },
+        "5d": { range: "5d", interval: "15m" },
         "1mo": { range: "1mo", interval: "1d" },
+        "3mo": { range: "3mo", interval: "1d" },
+        "6mo": { range: "6mo", interval: "1d" },
         "1y": { range: "1y", interval: "1d" },
-        "3y": { range: "5y", interval: "1wk", keep: 157 },
+        "5y": { range: "5y", interval: "1wk" },
       };
-      const rangeKey = url.searchParams.get("range") ?? "1mo";
-      const cfg = RANGES[rangeKey] ?? RANGES["1mo"];
+      const requestedRange = url.searchParams.get("range") ?? "1d";
+      const rangeKey = requestedRange in RANGES ? requestedRange : "1d";
+      const cfg = RANGES[rangeKey];
 
       const chart = await fetchChart(stockInfo.yahooSymbol, cfg.range, cfg.interval);
-      let candles = mapHistorical(chart) as any[];
-      if (cfg.keep && candles.length > cfg.keep) candles = candles.slice(-cfg.keep);
+      const candles = mapHistorical(chart) as any[];
       return new Response(JSON.stringify({ success: true, data: candles, range: rangeKey }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

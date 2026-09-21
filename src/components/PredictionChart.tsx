@@ -10,16 +10,19 @@ interface PredictionChartProps {
 }
 
 const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
-  { value: "15d", label: "15 days" },
+  { value: "1d", label: "1 day" },
+  { value: "5d", label: "5 days" },
   { value: "1mo", label: "1 month" },
+  { value: "3mo", label: "3 months" },
+  { value: "6mo", label: "6 months" },
   { value: "1y", label: "1 year" },
-  { value: "3y", label: "3 years" },
+  { value: "5y", label: "5 years" },
 ];
 
 const PredictionChart = ({ symbol }: PredictionChartProps) => {
-  const [range, setRange] = useState<HistoryRange>("1mo");
+  const [range, setRange] = useState<HistoryRange>("1d");
   const [candleOpen, setCandleOpen] = useState(false);
-  const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)?.label ?? "1 month";
+  const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)?.label ?? "1 day";
   const { data: histData, isLoading } = useHistoricalData(symbol, range);
   const historicalData = histData ?? [];
   const { data: forecastData } = useForecast(symbol);
