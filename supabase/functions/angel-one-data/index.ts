@@ -1265,10 +1265,24 @@ serve(async (req) => {
         .slice(0, 10);
       const budget = Number(url.searchParams.get("budget") ?? 0);
       if (!symbols.length || !(budget > 0)) {
-        return new Response(JSON.stringify({ success: false, error: "symbols and budget are required" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // Nothing to analyse yet (no basket picks, or no budget set): respond with
+        // an empty but successful payload so the UI can render its idle state.
+        const m = getMarketStatus();
+        return new Response(JSON.stringify({
+          success: true,
+          budget: budget > 0 ? budget : 0,
+          marketStatus: m.status,
+          istTime: m.istTime,
+          priceSource: m.status === "OPEN" ? "live" : "last-close",
+          rows: [],
+          profitableCount: 0,
+          unaffordableCount: 0,
+          skippedCount: 0,
+          totalProjectedProfit: 0,
+          totalMargin: 0,
+        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+
 
       const supabase = getSupabase();
       const market = getMarketStatus();
