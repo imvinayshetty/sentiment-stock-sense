@@ -101,22 +101,49 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 card-glow">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-lg font-semibold text-foreground">
             Price History & 7-Day Forecast
           </h3>
           <p className="text-sm text-muted-foreground">
-            Market feed · Last 1 month + SES/linear-regression projection
+            Market feed · Last {rangeLabel} + SES/linear-regression projection
           </p>
         </div>
-        <div className="flex items-center gap-1 rounded-md bg-primary/10 px-3 py-1">
-          <span className={`h-2 w-2 rounded-full ${historicalData.length ? "bg-primary animate-pulse-glow" : "bg-muted-foreground"}`} />
-          <span className={`font-mono text-xs ${historicalData.length ? "text-primary" : "text-muted-foreground"}`}>
-            {isLoading ? "LOADING..." : historicalData.length ? "LIVE" : "NO DATA"}
-          </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {rangePicker}
+          <button
+            onClick={() => setCandleOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+          >
+            <CandlestickChart className="h-4 w-4" />
+            Candle view
+          </button>
+          <div className="flex items-center gap-1 rounded-md bg-primary/10 px-3 py-1">
+            <span className={`h-2 w-2 rounded-full ${historicalData.length ? "bg-primary animate-pulse-glow" : "bg-muted-foreground"}`} />
+            <span className={`font-mono text-xs ${historicalData.length ? "text-primary" : "text-muted-foreground"}`}>
+              {isLoading ? "LOADING..." : historicalData.length ? "LIVE" : "NO DATA"}
+            </span>
+          </div>
         </div>
       </div>
+
+      <Dialog open={candleOpen} onOpenChange={setCandleOpen}>
+        <DialogContent className="max-w-[95vw] sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              <CandlestickChart className="h-5 w-5 text-primary" />
+              <span>{symbol} · candles</span>
+              <span className="text-sm font-normal text-muted-foreground">Last {rangeLabel} + forecast</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center gap-2">{rangePicker}</div>
+          <CandleChart data={data as any} height={400} />
+          <p className="text-xs text-muted-foreground">
+            Green candles closed above their open, red below. The dashed line is the 7-day projection.
+          </p>
+        </DialogContent>
+      </Dialog>
       <ResponsiveContainer width="100%" height={350}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
