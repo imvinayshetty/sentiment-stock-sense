@@ -1292,18 +1292,25 @@ serve(async (req) => {
           const expectedGain = predicted - price;
 
           const token = await resolveAngelToken(sym);
-          let charges: number | null = token
-            ? await fetchRoundTripCharges(supabase, sym, token, price, 1)
-            : null;
-          const chargeSource: "api" | "estimate" = charges != null ? "api" : "estimate";
-          if (charges == null) charges = estimateRoundTripCharges(price, 1);
-
           const marginInfo = token
             ? await fetchIntradayMargin(supabase, token, price)
             : { margin: price * 0.2, source: "estimate" as const };
 
-          const breakevenPerShare = charges;
+          // Charges include per-order components, so the per-share cost depends
+          // on size: price the round trip at the quantity the budget allows.
+          const plannedShares = Math.max(
+            1,
+            Math.floor((budget / symbols.length) / Math.max(1, marginInfo.margin)),
+          );
+          let charges: number | null = token
+            ? await fetchRoundTripCharges(supabase, sym, token, price, plannedShares)
+            : null;
+          const chargeSource: "api" | "estimate" = charges != null ? "api" : "estimate";
+          if (charges == null) charges = estimateRoundTripCharges(price, plannedShares);
+
+          const breakevenPerShare = charges / plannedShares;
           const netPerShare = expectedGain - breakevenPerShare;
+
           return {
             symbol: sym,
             name: info.name,
