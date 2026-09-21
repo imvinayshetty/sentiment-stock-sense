@@ -9,7 +9,6 @@ import StockDetail from "@/components/StockDetail";
 import PredictionChart from "@/components/PredictionChart";
 import SentimentGauge from "@/components/SentimentGauge";
 import PriceTarget from "@/components/PriceTarget";
-import NewsFeed from "@/components/NewsFeed";
 import BasketAccuracy from "@/components/BasketAccuracy";
 import BasketComparison from "@/components/BasketComparison";
 import BasketHistory from "@/components/BasketHistory";
@@ -17,14 +16,13 @@ import BasketDayCompare from "@/components/BasketDayCompare";
 import DemoTrading from "@/components/DemoTrading";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import { Scale, Columns2, Wallet, History } from "lucide-react";
-import { useStockQuotes, useForecast, useNewsSentiment } from "@/hooks/useAngelOneData";
+import { useStockQuotes, useForecast } from "@/hooks/useAngelOneData";
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
   const { data: quotes, isFetching: quotesFetching, refetch } = useStockQuotes();
   const { isFetching: forecastFetching } = useForecast(selectedSymbol);
-  const { isFetching: sentimentFetching } = useNewsSentiment(selectedSymbol);
-  const isRefreshing = quotesFetching || forecastFetching || sentimentFetching;
+  const isRefreshing = quotesFetching || forecastFetching;
   const queryClient = useQueryClient();
   const marketOpen = quotes?.marketStatus === "OPEN";
   const istTime = quotes?.istTime;
@@ -36,7 +34,7 @@ const Index = () => {
     queryClient.invalidateQueries({ queryKey: ["historical", selectedSymbol], refetchType: "active" });
     // Prefix-match so HoldingsSellPanel rows (each keyed by their own symbol) also refresh.
     queryClient.invalidateQueries({ queryKey: ["forecast"], refetchType: "active" });
-    queryClient.invalidateQueries({ queryKey: ["news-sentiment"], refetchType: "active" });
+    queryClient.invalidateQueries({ queryKey: ["basket-accuracy"], refetchType: "active" });
   };
 
   return (
@@ -154,10 +152,6 @@ const Index = () => {
           </CollapsibleSection>
         </div>
 
-        {/* News */}
-        <div className="animate-fade-in-up" style={{ animationDelay: "450ms" }}>
-          <NewsFeed symbol={selectedSymbol} />
-        </div>
       </main>
 
       {/* Footer */}

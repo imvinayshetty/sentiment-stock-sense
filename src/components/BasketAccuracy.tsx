@@ -104,7 +104,9 @@ const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => {
           }`}
         >
           {r.close_price == null
-            ? "awaiting close"
+            ? r.current_price != null
+              ? `${r.current_price >= r.base_price ? "+" : "−"}₹${Math.abs(r.current_price - r.base_price).toFixed(2)}/sh live`
+              : "awaiting live price"
             : `${r.correct ? "+" : "−"}₹${Math.abs(r.close_price - r.base_price).toFixed(2)}/sh`}
         </div>
       </button>
@@ -154,6 +156,9 @@ const RowLine = ({ r, live }: { r: BasketRow; live?: StockQuote }) => {
                   value={`₹${r.close_price.toFixed(2)} · ${r.correct ? "correct" : "wrong"}`}
                   tone={r.correct ? "text-chart-up" : "text-chart-down"}
                 />
+              )}
+              {r.close_price == null && r.current_price != null && (
+                <LiveStat label="Current basket price" value={`₹${r.current_price.toFixed(2)} · live`} />
               )}
               {r.risk_score != null && (
                 <div className="mt-1">
@@ -238,6 +243,9 @@ const BasketAccuracy = () => {
                 ? "session closed"
                 : "session open"}
           </span>
+          {data?.priceSource === "live" && (
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] text-primary">Angel One live</span>
+          )}
         </div>
       </div>
 

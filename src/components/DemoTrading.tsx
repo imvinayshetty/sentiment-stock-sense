@@ -209,6 +209,7 @@ const DemoTrading = () => {
   const [ruleSl, setRuleSl] = useState("");
   const [ruleTgt, setRuleTgt] = useState("");
   const { data: quotes, isLoading } = useStockQuotes();
+  const canTrade = quotes?.marketStatus === "OPEN" && quotes.source === "live";
   const { toast } = useToast();
 
   const sessionId = useRef(getSessionId());
@@ -452,6 +453,16 @@ const DemoTrading = () => {
 
   const handleTrade = (side: "BUY" | "SELL") => {
     if (!liveSelected) return;
+    if (!canTrade) {
+      toast({
+        title: "Live market price required",
+        description: quotes?.marketStatus === "OPEN"
+          ? "Angel One live pricing is temporarily unavailable. Try refreshing shortly."
+          : "Paper orders can only be placed while the NSE market is open.",
+        variant: "destructive",
+      });
+      return;
+    }
     const qty = Math.max(1, Math.floor(quantity) || 1);
     const total = liveSelected.price * qty;
     let slPrice: number | undefined;
@@ -610,7 +621,7 @@ const DemoTrading = () => {
 
   // Only auto-exit while the market is open — closed-market last prices should
   // not trigger fills.
-  const monitored = quotes?.marketStatus === "OPEN" ? holdingsList : EMPTY_POSITIONS;
+  const monitored = canTrade ? holdingsList : EMPTY_POSITIONS;
   useAutoExitMonitoring(monitored, priceMap, handleAutoExit);
 
   // ---------- Auto-buy rules ----------
@@ -754,8 +765,8 @@ const DemoTrading = () => {
 
   // Only arm auto-buys while the market is open, so stale closing prices can't fill.
   const monitoredRules = useMemo(
-    () => (quotes?.marketStatus === "OPEN" ? autoBuyRules.filter((r) => r.status === "active") : []),
-    [quotes?.marketStatus, autoBuyRules],
+    () => (canTrade ? autoBuyRules.filter((r) => r.status === "active") : []),
+    [canTrade, autoBuyRules],
   );
   useAutoBuyMonitoring(monitoredRules, priceMap, handleAutoBuyTrigger);
 
@@ -809,13 +820,14 @@ const DemoTrading = () => {
         </p>
       </div>
 
-      {quotes?.source === "last-close" && (
+      {!canTrade && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-chart-down/40 bg-chart-down/10 p-3 text-xs text-chart-down">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Prices shown are the last closing values, not live quotes
-            {quotes?.marketStatus !== "OPEN" ? " (market closed)" : ""}. Orders
-            execute at these stale prices and auto-exit rules stay paused.
+            {quotes?.marketStatus === "OPEN"
+              ? "Angel One live pricing is temporarily unavailable."
+              : "Prices shown are the latest official closing values because the market is closed."}
+            {" "}Paper orders and automatic rules stay paused until verified live prices return.
           </span>
         </div>
       )}
@@ -963,7 +975,7 @@ const DemoTrading = () => {
                   onChange={(e) =>
                     setQuantity(Math.max(1, Math.floor(Number(e.target.value)) || 1))
                   }
-                  disabled={!liveSelected}
+                   disabled={!liveSelected || !canTrade}
                   className="w-20 rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
@@ -996,7 +1008,7 @@ const DemoTrading = () => {
                         type="number"
                         value={stopLossValue}
                         onChange={(e) => setStopLossValue(e.target.value)}
-                        disabled={!liveSelected}
+                   disabled={!liveSelected || !canTrade}
                         placeholder={stopLossMethod === "percentage" ? "2 (%)" : "Price"}
                         className="w-full rounded-lg border border-chart-down/40 bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                       />
