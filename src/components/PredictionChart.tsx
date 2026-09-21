@@ -129,22 +129,6 @@ const PredictionChart = ({ symbol, onCandleView }: PredictionChartProps) => {
         </div>
       </div>
 
-      <Dialog open={candleOpen} onOpenChange={setCandleOpen}>
-        <DialogContent className="max-w-[95vw] sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="flex flex-wrap items-center gap-2">
-              <CandlestickChart className="h-5 w-5 text-primary" />
-              <span>{symbol} · candles</span>
-              <span className="text-sm font-normal text-muted-foreground">Last {rangeLabel} + forecast</span>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center gap-2">{rangePicker}</div>
-          <CandleChart data={data as any} height={400} />
-          <p className="text-xs text-muted-foreground">
-            Green candles closed above their open, red below. The dashed line is the 7-day projection.
-          </p>
-        </DialogContent>
-      </Dialog>
       <ResponsiveContainer width="100%" height={350}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
