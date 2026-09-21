@@ -1,14 +1,43 @@
+import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { useHistoricalData, useForecast } from "@/hooks/useAngelOneData";
+import { CandlestickChart } from "lucide-react";
+import { useHistoricalData, useForecast, type HistoryRange } from "@/hooks/useAngelOneData";
+import CandleChart from "@/components/CandleChart";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface PredictionChartProps {
   symbol: string;
 }
 
+const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
+  { value: "15d", label: "15 days" },
+  { value: "1mo", label: "1 month" },
+  { value: "1y", label: "1 year" },
+  { value: "3y", label: "3 years" },
+];
+
 const PredictionChart = ({ symbol }: PredictionChartProps) => {
-  const { data: histData, isLoading } = useHistoricalData(symbol);
+  const [range, setRange] = useState<HistoryRange>("1mo");
+  const [candleOpen, setCandleOpen] = useState(false);
+  const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)?.label ?? "1 month";
+  const { data: histData, isLoading } = useHistoricalData(symbol, range);
   const historicalData = histData ?? [];
   const { data: forecastData } = useForecast(symbol);
+
+  const rangePicker = (
+    <select
+      value={range}
+      onChange={(e) => setRange(e.target.value as HistoryRange)}
+      aria-label="Price history range"
+      className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+    >
+      {RANGE_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
 
   if (isLoading && historicalData.length === 0) {
     return (
@@ -28,14 +57,17 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
   if (!isLoading && historicalData.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 card-glow">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-lg font-semibold text-foreground">Historical Price Data</h3>
             <p className="text-sm text-muted-foreground">Verified history is unavailable for this stock right now.</p>
           </div>
-          <div className="flex items-center gap-1 rounded-md bg-muted px-3 py-1">
-            <span className="h-2 w-2 rounded-full bg-muted-foreground" />
-            <span className="font-mono text-xs text-muted-foreground">NO DATA</span>
+          <div className="flex items-center gap-2">
+            {rangePicker}
+            <div className="flex items-center gap-1 rounded-md bg-muted px-3 py-1">
+              <span className="h-2 w-2 rounded-full bg-muted-foreground" />
+              <span className="font-mono text-xs text-muted-foreground">NO DATA</span>
+            </div>
           </div>
         </div>
       </div>
@@ -69,22 +101,49 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 card-glow">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-lg font-semibold text-foreground">
             Price History & 7-Day Forecast
           </h3>
           <p className="text-sm text-muted-foreground">
-            Market feed · Last 1 month + SES/linear-regression projection
+            Market feed · Last {rangeLabel} + SES/linear-regression projection
           </p>
         </div>
-        <div className="flex items-center gap-1 rounded-md bg-primary/10 px-3 py-1">
-          <span className={`h-2 w-2 rounded-full ${historicalData.length ? "bg-primary animate-pulse-glow" : "bg-muted-foreground"}`} />
-          <span className={`font-mono text-xs ${historicalData.length ? "text-primary" : "text-muted-foreground"}`}>
-            {isLoading ? "LOADING..." : historicalData.length ? "LIVE" : "NO DATA"}
-          </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {rangePicker}
+          <button
+            onClick={() => setCandleOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+          >
+            <CandlestickChart className="h-4 w-4" />
+            Candle view
+          </button>
+          <div className="flex items-center gap-1 rounded-md bg-primary/10 px-3 py-1">
+            <span className={`h-2 w-2 rounded-full ${historicalData.length ? "bg-primary animate-pulse-glow" : "bg-muted-foreground"}`} />
+            <span className={`font-mono text-xs ${historicalData.length ? "text-primary" : "text-muted-foreground"}`}>
+              {isLoading ? "LOADING..." : historicalData.length ? "LIVE" : "NO DATA"}
+            </span>
+          </div>
         </div>
       </div>
+
+      <Dialog open={candleOpen} onOpenChange={setCandleOpen}>
+        <DialogContent className="max-w-[95vw] sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              <CandlestickChart className="h-5 w-5 text-primary" />
+              <span>{symbol} · candles</span>
+              <span className="text-sm font-normal text-muted-foreground">Last {rangeLabel} + forecast</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center gap-2">{rangePicker}</div>
+          <CandleChart data={data as any} height={400} />
+          <p className="text-xs text-muted-foreground">
+            Green candles closed above their open, red below. The dashed line is the 7-day projection.
+          </p>
+        </DialogContent>
+      </Dialog>
       <ResponsiveContainer width="100%" height={350}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
