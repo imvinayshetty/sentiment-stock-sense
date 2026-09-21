@@ -205,9 +205,9 @@ const DemoTrading = () => {
     loadState<AutoBuyRule[]>("autoBuyRules", []),
   );
   const [ruleTrigger, setRuleTrigger] = useState("");
-  const [ruleQty, setRuleQty] = useState("1");
-  const [ruleSl, setRuleSl] = useState("");
-  const [ruleTgt, setRuleTgt] = useState("");
+  /** "market" buys instantly at the live price, "auto" waits for a trigger price. */
+  const [buyMode, setBuyMode] = useState<"market" | "auto">("market");
+
   const { data: quotes, isLoading } = useStockQuotes();
   const canTrade = quotes?.marketStatus === "OPEN" && quotes.source === "live";
   const { toast } = useToast();
