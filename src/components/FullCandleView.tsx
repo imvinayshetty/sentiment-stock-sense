@@ -1,16 +1,16 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickChart, ExternalLink, Undo2 } from "lucide-react";
 
-type ChartRange = "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y" | "5y";
+type ChartRange = "1D" | "5D" | "1M" | "3M" | "6M" | "12M" | "60M";
 
 const RANGE_OPTIONS: { value: ChartRange; label: string; interval: string }[] = [
-  { value: "1d", label: "1 day", interval: "5" },
-  { value: "5d", label: "5 days", interval: "15" },
-  { value: "1mo", label: "1 month", interval: "60" },
-  { value: "3mo", label: "3 months", interval: "D" },
-  { value: "6mo", label: "6 months", interval: "D" },
-  { value: "1y", label: "1 year", interval: "D" },
-  { value: "5y", label: "5 years", interval: "W" },
+  { value: "1D", label: "1 day", interval: "5" },
+  { value: "5D", label: "5 days", interval: "15" },
+  { value: "1M", label: "1 month", interval: "60" },
+  { value: "3M", label: "3 months", interval: "D" },
+  { value: "6M", label: "6 months", interval: "D" },
+  { value: "12M", label: "1 year", interval: "D" },
+  { value: "60M", label: "5 years", interval: "W" },
 ];
 
 interface FullCandleViewProps {
@@ -18,14 +18,57 @@ interface FullCandleViewProps {
   onBack: () => void;
 }
 
+const WIDGET_SRC = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+
 const FullCandleView = ({ symbol, onBack }: FullCandleViewProps) => {
-  const [range, setRange] = useState<ChartRange>("1d");
+  const [range, setRange] = useState<ChartRange>("1D");
+  const containerRef = useRef<HTMLDivElement>(null);
   const option = RANGE_OPTIONS.find((o) => o.value === range) ?? RANGE_OPTIONS[0];
   const nseSymbol = `${symbol.toUpperCase()}-EQ`;
   const nseUrl = `https://charting.nseindia.com/?symbol=${encodeURIComponent(nseSymbol)}`;
-  const embedUrl =
-    `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(`NSE:${symbol.toUpperCase()}`)}` +
-    `&interval=${option.interval}&theme=dark&style=1&timezone=Asia%2FKolkata&hide_side_toolbar=0&withdateranges=1&allow_symbol_change=0&save_image=0&locale=in`;
+
+  const widgetConfig = useMemo(
+    () => ({
+      autosize: true,
+      symbol: `NSE:${symbol.toUpperCase()}`,
+      interval: option.interval,
+      timezone: "Asia/Kolkata",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      backgroundColor: "rgba(0, 0, 0, 0)",
+      hide_side_toolbar: false,
+      allow_symbol_change: false,
+      withdateranges: true,
+      save_image: false,
+      calendar: false,
+      support_host: "https://www.tradingview.com",
+    }),
+    [symbol, option.interval],
+  );
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    container.innerHTML = "";
+
+    const widgetHost = document.createElement("div");
+    widgetHost.className = "tradingview-widget-container__widget";
+    widgetHost.style.height = "100%";
+    widgetHost.style.width = "100%";
+    container.appendChild(widgetHost);
+
+    const script = document.createElement("script");
+    script.src = WIDGET_SRC;
+    script.type = "text/javascript";
+    script.async = true;
+    script.innerHTML = JSON.stringify(widgetConfig);
+    container.appendChild(script);
+
+    return () => {
+      container.innerHTML = "";
+    };
+  }, [widgetConfig]);
 
   return (
     <div className="w-full rounded-xl border border-border bg-card p-5 card-glow">
@@ -36,7 +79,7 @@ const FullCandleView = ({ symbol, onBack }: FullCandleViewProps) => {
             {nseSymbol} · Candle View
           </h3>
           <p className="text-sm text-muted-foreground">
-            Interactive NSE candlestick chart · {option.label} view · drawing tools and indicators available
+            Interactive candlestick chart · {option.label} view · drawing tools and indicators available
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -71,13 +114,9 @@ const FullCandleView = ({ symbol, onBack }: FullCandleViewProps) => {
         </div>
       </div>
 
-      <iframe
-        key={`${symbol}-${option.interval}`}
-        src={embedUrl}
-        title={`${nseSymbol} candlestick chart`}
-        className="h-[480px] w-full rounded-lg border border-border bg-background"
-        allow="fullscreen"
-        loading="lazy"
+      <div
+        ref={containerRef}
+        className="tradingview-widget-container h-[480px] w-full rounded-lg border border-border bg-background overflow-hidden"
       />
     </div>
   );
