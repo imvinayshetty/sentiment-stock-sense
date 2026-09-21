@@ -102,13 +102,34 @@ const Index = () => {
           <StockDetail symbol={selectedSymbol} />
         </div>
 
-        {/* Chart + Sentiment */}
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 animate-fade-in-up" style={{ animationDelay: "200ms" }}>
-            <PredictionChart symbol={selectedSymbol} />
-          </div>
-          <div className="animate-fade-in-up" style={{ animationDelay: "300ms" }}>
-            <SentimentGauge symbol={selectedSymbol} />
+        {/* Chart + Sentiment — flips to a full-width candle view */}
+        <div style={{ perspective: "1600px" }}>
+          <div
+            className="grid transition-transform duration-500"
+            style={{
+              transformStyle: "preserve-3d",
+              transform: candleFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
+            }}
+          >
+            {/* Front: forecast chart + sentiment */}
+            <div
+              className="col-start-1 row-start-1 grid gap-6 lg:grid-cols-3"
+              style={{ backfaceVisibility: "hidden" }}
+            >
+              <div className="lg:col-span-2 animate-fade-in-up" style={{ animationDelay: "200ms" }}>
+                <PredictionChart symbol={selectedSymbol} onCandleView={() => setCandleFlipped(true)} />
+              </div>
+              <div className="animate-fade-in-up" style={{ animationDelay: "300ms" }}>
+                <SentimentGauge symbol={selectedSymbol} />
+              </div>
+            </div>
+            {/* Back: full-width candle chart */}
+            <div
+              className="col-start-1 row-start-1"
+              style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+            >
+              <FullCandleView symbol={selectedSymbol} onBack={() => setCandleFlipped(false)} />
+            </div>
           </div>
         </div>
 
