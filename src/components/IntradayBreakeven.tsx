@@ -17,7 +17,11 @@ const Stat = ({ label, value, tone }: { label: string; value: string; tone?: str
 const RowCard = ({ r }: { r: BreakevenRow }) => (
   <div
     className={`rounded-lg border p-3 ${
-      r.profitable ? "border-chart-up/40 bg-chart-up/5" : "border-chart-down/30 bg-chart-down/5"
+      r.profitable
+        ? r.shares > 0
+          ? "border-chart-up/40 bg-chart-up/5"
+          : "border-chart-neutral/40 bg-chart-neutral/5"
+        : "border-chart-down/30 bg-chart-down/5"
     }`}
   >
     <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -25,7 +29,11 @@ const RowCard = ({ r }: { r: BreakevenRow }) => (
       <span className="truncate text-xs text-muted-foreground">{r.name}</span>
       <span
         className={`ml-auto flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-          r.profitable ? "bg-chart-up/15 text-chart-up" : "bg-chart-down/15 text-chart-down"
+          r.profitable
+            ? r.shares > 0
+              ? "bg-chart-up/15 text-chart-up"
+              : "bg-chart-neutral/15 text-chart-neutral"
+            : "bg-chart-down/15 text-chart-down"
         }`}
       >
         {r.profitable && r.shares > 0 ? <CheckCircle2 className="h-3 w-3" /> : r.profitable ? <AlertTriangle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
@@ -60,6 +68,12 @@ const RowCard = ({ r }: { r: BreakevenRow }) => (
         {r.marginSource === "estimate" && <span className="text-muted-foreground"> (approx.)</span>}
       </p>
     )}
+    {r.profitable && r.shares === 0 && (
+      <p className="mt-2 text-xs text-chart-neutral">
+        The forecast clears the charges, but one share's margin costs more than this stock's share of
+        your budget — a higher budget would make this trade possible.
+      </p>
+    )}
     {!r.profitable && (
       <p className="mt-2 text-xs text-muted-foreground">
         Today's forecast move doesn't cover the round-trip charges.
@@ -74,8 +88,17 @@ const RowCard = ({ r }: { r: BreakevenRow }) => (
  * margin-sized position within the configured budget.
  */
 const IntradayBreakeven = () => {
-  const { topBuy, budgetMax, isLoading: basketLoading } = useDailyBasket();
-  const symbols = topBuy.map((s) => s.symbol);
+  const { candidates, budgetMax, isLoading: basketLoading } = useDailyBasket();
+  const { data: basketData } = useBasketAccuracy(budgetMax != null ? candidates : []);
+  // Use the locked daily basket snapshot, not the live-ranked list: the basket
+  // is fixed at market open, so these symbols stay stable all day and the
+  // breakeven query key never churns on 15-second quote refreshes.
+  const basketDate = basketData?.basketDate;
+  const symbols = useMemo(
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the basket day; rows only change with it
+    () => (basketData?.rows ?? []).map((r) => r.symbol),
+    [basketDate],
+  );
   const { data, isLoading, isFetching, error, refetch } = useIntradayBreakeven(symbols, budgetMax);
 
   if (budgetMax == null) {
