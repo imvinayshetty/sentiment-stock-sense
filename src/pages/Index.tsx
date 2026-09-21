@@ -15,8 +15,10 @@ import BasketComparison from "@/components/BasketComparison";
 import BasketHistory from "@/components/BasketHistory";
 import BasketDayCompare from "@/components/BasketDayCompare";
 import DemoTrading from "@/components/DemoTrading";
+import IntradayBreakeven from "@/components/IntradayBreakeven";
 import CollapsibleSection from "@/components/CollapsibleSection";
-import { Scale, Columns2, Wallet, History } from "lucide-react";
+import { Scale, Columns2, Wallet, History, Calculator } from "lucide-react";
+
 import { useStockQuotes, useForecast } from "@/hooks/useAngelOneData";
 
 const Index = () => {
@@ -142,6 +144,15 @@ const Index = () => {
         <div className="animate-fade-in-up" style={{ animationDelay: "375ms" }}>
           <BasketAccuracy />
         </div>
+
+        {/* Intraday breakeven & suggestions (collapsed by default) */}
+        <div className="animate-fade-in-up" style={{ animationDelay: "378ms" }}>
+          <CollapsibleSection title="Intraday Breakeven & Suggestions" icon={<Calculator className="h-5 w-5 text-primary" />}>
+            <IntradayBreakeven />
+          </CollapsibleSection>
+        </div>
+
+
 
         {/* Basket history (collapsed by default) */}
         <div className="animate-fade-in-up" style={{ animationDelay: "380ms" }}>
