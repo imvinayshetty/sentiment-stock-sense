@@ -11,8 +11,9 @@ interface CollapsibleSectionProps {
 }
 
 /**
- * Collapsible section shell: a full-width header button plus the child content
- * (only mounted while open). Starts collapsed unless defaultOpen is set.
+ * Collapsible section shell: a full-width header button plus the child content.
+ * Children stay mounted while collapsed (hidden via CSS) so expanding never
+ * re-triggers expensive data fetches. Starts collapsed unless defaultOpen is set.
  */
 const CollapsibleSection = ({ title, icon, hint, defaultOpen = false, children }: CollapsibleSectionProps) => {
   const [open, setOpen] = useState(defaultOpen);
@@ -34,7 +35,7 @@ const CollapsibleSection = ({ title, icon, hint, defaultOpen = false, children }
           {open ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
         </span>
       </button>
-      {open && <div className="animate-fade-in-up">{children}</div>}
+      <div className={open ? "animate-fade-in-up" : "hidden"}>{children}</div>
     </div>
   );
 };
