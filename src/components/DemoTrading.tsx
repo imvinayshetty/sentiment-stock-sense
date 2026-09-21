@@ -1037,7 +1037,7 @@ const DemoTrading = () => {
                   onChange={(e) =>
                     setQuantity(Math.max(1, Math.floor(Number(e.target.value)) || 1))
                   }
-                   disabled={!liveSelected || !canTrade}
+                   disabled={!liveSelected || (buyMode === "market" && !canTrade)}
                   className="w-20 rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
@@ -1070,7 +1070,7 @@ const DemoTrading = () => {
                         type="number"
                         value={stopLossValue}
                         onChange={(e) => setStopLossValue(e.target.value)}
-                   disabled={!liveSelected || !canTrade}
+                   disabled={!liveSelected}
                         placeholder={stopLossMethod === "percentage" ? "2 (%)" : "Price"}
                         className="w-full rounded-lg border border-chart-down/40 bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                       />
