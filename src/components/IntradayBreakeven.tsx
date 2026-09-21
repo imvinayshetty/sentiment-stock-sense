@@ -1,6 +1,7 @@
-import { CheckCircle2, XCircle, Loader2, RefreshCw } from "lucide-react";
+import { useMemo } from "react";
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useDailyBasket } from "@/hooks/useDailyBasket";
+import { useDailyBasket, useBasketAccuracy } from "@/hooks/useDailyBasket";
 import { useIntradayBreakeven, type BreakevenRow } from "@/hooks/useIntradayBreakeven";
 
 const inr = (v: number) =>
@@ -27,8 +28,8 @@ const RowCard = ({ r }: { r: BreakevenRow }) => (
           r.profitable ? "bg-chart-up/15 text-chart-up" : "bg-chart-down/15 text-chart-down"
         }`}
       >
-        {r.profitable ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-        {r.profitable ? "Profitable" : "Skip this trade"}
+        {r.profitable && r.shares > 0 ? <CheckCircle2 className="h-3 w-3" /> : r.profitable ? <AlertTriangle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+        {r.profitable ? (r.shares > 0 ? "Profitable" : "Too expensive") : "Skip this trade"}
       </span>
     </div>
 
