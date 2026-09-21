@@ -123,6 +123,18 @@ const RowLine = ({
               : "awaiting live price"
             : `${r.correct ? "+" : "−"}₹${Math.abs(r.close_price - r.base_price).toFixed(2)}/sh`}
         </div>
+        {be && (
+          <div className="mt-1 flex flex-col gap-0.5 border-t border-border/60 pt-1 font-mono text-[10px]">
+            <span className={be.profitable ? "text-chart-up" : "text-chart-down"}>
+              {be.profitable ? "net " : "short "}
+              {be.netPerShare >= 0 ? "+" : "−"}
+              {inr(Math.abs(be.netPerShare))}/sh
+            </span>
+            <span className="text-muted-foreground">
+              cost {inr(be.breakevenPerShare)} · margin {inr(be.marginPerShare)}/sh
+            </span>
+          </div>
+        )}
       </button>
       {open &&
         pos &&
