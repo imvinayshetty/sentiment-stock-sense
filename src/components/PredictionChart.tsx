@@ -2,11 +2,10 @@ import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { CandlestickChart } from "lucide-react";
 import { useHistoricalData, useForecast, type HistoryRange } from "@/hooks/useAngelOneData";
-import CandleChart from "@/components/CandleChart";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface PredictionChartProps {
   symbol: string;
+  onCandleView?: () => void;
 }
 
 const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
@@ -19,9 +18,8 @@ const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
   { value: "5y", label: "5 years" },
 ];
 
-const PredictionChart = ({ symbol }: PredictionChartProps) => {
+const PredictionChart = ({ symbol, onCandleView }: PredictionChartProps) => {
   const [range, setRange] = useState<HistoryRange>("1d");
-  const [candleOpen, setCandleOpen] = useState(false);
   const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)?.label ?? "1 day";
   const { data: histData, isLoading } = useHistoricalData(symbol, range);
   const historicalData = histData ?? [];
