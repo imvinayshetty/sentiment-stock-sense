@@ -74,6 +74,7 @@ const ANGEL_TOKENS: Record<string, string> = {
 const TOKEN_TO_SYMBOL: Record<string, string> = Object.fromEntries(
   Object.entries(ANGEL_TOKENS).map(([sym, tok]) => [tok, sym]),
 );
+const NIFTY_50_TOKEN = "99926000";
 
 function getSupabase() {
   return createClient(
@@ -173,11 +174,14 @@ async function getAngelJwt(supabase: any, forceNew = false): Promise<string> {
   return jwt;
 }
 
-async function fetchAngelQuotes(supabase: any) {
+async function fetchAngelSnapshot(supabase: any) {
   const apiKey = Deno.env.get("ANGEL_ONE_API_KEY");
   if (!apiKey) throw new Error("Angel One credentials missing");
 
-  const body = JSON.stringify({ mode: "FULL", exchangeTokens: { NSE: Object.values(ANGEL_TOKENS) } });
+  const body = JSON.stringify({
+    mode: "FULL",
+    exchangeTokens: { NSE: [...Object.values(ANGEL_TOKENS), NIFTY_50_TOKEN] },
+  });
   const doQuote = (jwt: string) => fetch(
     "https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/",
     { method: "POST", headers: { ...angelHeaders(apiKey), Authorization: `Bearer ${jwt}` }, body },
@@ -197,6 +201,10 @@ async function fetchAngelQuotes(supabase: any) {
   }
   if (!fetched.length) throw new Error(`Angel One quote empty: ${JSON.stringify(quoteData?.message ?? quoteData)}`);
 
+  return fetched;
+}
+
+function mapAngelQuotes(fetched: any[]) {
   return fetched.map((f) => {
     const symbol = TOKEN_TO_SYMBOL[String(f.symbolToken)];
     const info = STOCK_TOKENS[symbol];
@@ -221,6 +229,17 @@ async function fetchAngelQuotes(supabase: any) {
       marketTime: Math.floor(Date.now() / 1000),
     };
   }).filter((q): q is NonNullable<typeof q> => Boolean(q) && q.price > 0);
+}
+
+async function fetchAngelQuotes(supabase: any) {
+  return mapAngelQuotes(await fetchAngelSnapshot(supabase));
+}
+
+function mapAngelNiftyReturn(fetched: any[]): number | null {
+  const quote = fetched.find((f) => String(f.symbolToken) === NIFTY_50_TOKEN);
+  const open = Number(quote?.open ?? 0);
+  const price = Number(quote?.ltp ?? 0);
+  return open > 0 && price > 0 ? Number((((price - open) / open) * 100).toFixed(2)) : null;
 }
 
 // ---------- Forecast (SES + linear regression) ----------
@@ -581,11 +600,13 @@ serve(async (req) => {
     if (action === "quotes") {
       const market = getMarketStatus();
       let data: any[] = [];
+      let source: "live" | "last-close" = "last-close";
 
       // During market hours, prefer Angel One live quotes; fall back to Yahoo on any failure.
       if (market.status === "OPEN") {
         try {
           data = await fetchAngelQuotes(getSupabase());
+          if (data.length) source = "live";
         } catch (error) {
           console.error("Angel One quotes failed, falling back to Yahoo:", error);
           data = [];
@@ -618,7 +639,7 @@ serve(async (req) => {
         data,
         marketStatus: market.status,
         istTime,
-        source: market.status === "OPEN" ? "live" : "last-close",
+        source,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -802,9 +823,20 @@ serve(async (req) => {
 
       const { data: existing } = await supabase
         .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);
+      let liveQuotes = new Map<string, any>();
+      let liveMarketReturn: number | null = null;
+      if (market.status === "OPEN") {
+        try {
+          const snapshot = await fetchAngelSnapshot(supabase);
+          liveQuotes = new Map(mapAngelQuotes(snapshot).map((quote) => [quote.symbol, quote]));
+          liveMarketReturn = mapAngelNiftyReturn(snapshot);
+        } catch (error) {
+          console.error("Live basket snapshot failed:", error);
+        }
+      }
       // The basket is locked in once per trading day: only pick stocks when the
       // day has nothing recorded yet.
-      const needsPick = tradingToday && (existing ?? []).length === 0;
+      const needsPick = market.status === "OPEN" && (existing ?? []).length === 0 && liveQuotes.size > 0;
 
       if (needsPick) {
         // Study each candidate's recent day-trade behaviour (open -> close) and
@@ -817,8 +849,9 @@ serve(async (req) => {
             const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
             const result = computeForecast(closes);
             if (!result) return null;
-            const quote = mapQuote(sym, info, chart);
-            const base = Number(quote?.open ?? result.lastPrice);
+            const liveQuote = liveQuotes.get(sym);
+            if (!liveQuote) return null;
+            const base = Number(liveQuote.open);
             const predicted = result.forecast[0].forecast;
             if (!(base > 0)) return null;
 
@@ -913,6 +946,19 @@ serve(async (req) => {
         .from("basket_prediction").select("*").eq("session_id", session).eq("basket_date", basketDate);
       let rows = dayRows ?? [];
 
+      // Repair today's opening snapshots from Angel One when older rows were
+      // created through a delayed fallback feed. Predictions stay unchanged.
+      if (market.status === "OPEN" && rows.length && liveQuotes.size > 0) {
+        const repaired = await fetchInBatches(rows, 5, async (row: any) => {
+          const open = Number(liveQuotes.get(row.symbol)?.open ?? 0);
+          if (!(open > 0) || open === Number(row.base_price)) return null;
+          await supabase.from("basket_prediction").update({ base_price: open }).eq("id", row.id);
+          return { id: row.id, base_price: open };
+        });
+        const repairedById = new Map(repaired.filter(Boolean).map((row: any) => [row.id, row]));
+        rows = rows.map((row: any) => repairedById.has(row.id) ? { ...row, ...repairedById.get(row.id) } : row);
+      }
+
       // Score unscored rows once the trading session has ended.
       const unscored = rows.filter((r: any) => r.close_price == null);
       if (sessionEnded && unscored.length) {
@@ -949,6 +995,7 @@ serve(async (req) => {
         avg_range_pct: r.avg_range_pct != null ? Number(r.avg_range_pct) : null,
         risk_score: r.risk_score != null ? Number(r.risk_score) : null,
         risk_label: r.risk_label ?? null,
+        current_price: market.status === "OPEN" ? Number(liveQuotes.get(r.symbol)?.price ?? 0) || null : null,
       });
       const summarize = (list: any[]) => {
         const done = list.filter((r) => r.close_price != null);
@@ -959,13 +1006,16 @@ serve(async (req) => {
           absErr += err;
           if (Number(r.close_price) > 0) pctErr += (err / Number(r.close_price)) * 100;
         }
-        // Equal-weight same-day return the basket actually delivered.
+        // Completed sessions use the official close. During today's session,
+        // use the current Angel One price without overwriting the stored close.
+        const priced = list.filter((r) => r.close_price != null || r.current_price != null);
         let retSum = 0;
-        for (const r of done) {
+        for (const r of priced) {
           const base = Number(r.base_price);
-          if (base > 0) retSum += ((Number(r.close_price) - base) / base) * 100;
+          const mark = Number(r.close_price ?? r.current_price);
+          if (base > 0 && mark > 0) retSum += ((mark - base) / base) * 100;
         }
-        const winners = done.filter((r) => Number(r.close_price) > Number(r.base_price)).length;
+        const winners = priced.filter((r) => Number(r.close_price ?? r.current_price) > Number(r.base_price)).length;
         const withRisk = list.filter((r) => r.risk_score != null);
         const avgRisk = withRisk.length
           ? Math.round(withRisk.reduce((a, r) => a + Number(r.risk_score), 0) / withRisk.length)
@@ -977,8 +1027,8 @@ serve(async (req) => {
           mae: done.length ? Number((absErr / done.length).toFixed(2)) : null,
           mape: done.length ? Number((pctErr / done.length).toFixed(2)) : null,
           avgRisk,
-          basketReturnPct: done.length ? Number((retSum / done.length).toFixed(2)) : null,
-          winners: done.length ? winners : null,
+          basketReturnPct: priced.length ? Number((retSum / priced.length).toFixed(2)) : null,
+          winners: priced.length ? winners : null,
         };
       };
 
@@ -1023,13 +1073,15 @@ serve(async (req) => {
       // NIFTY 50 same-day move: the market benchmark each basket is measured against.
       const marketReturns = await fetchMarketDayReturns();
       const withBenchmark = (date: string, summary: any) => {
-        const market = marketReturns[date] ?? null;
+        const marketValue = date === basketDate && market.status === "OPEN"
+          ? liveMarketReturn
+          : marketReturns[date] ?? null;
         return {
           ...summary,
-          marketReturnPct: market,
+          marketReturnPct: marketValue,
           alphaPct:
-            summary.basketReturnPct != null && market != null
-              ? Number((summary.basketReturnPct - market).toFixed(2))
+            summary.basketReturnPct != null && marketValue != null
+              ? Number((summary.basketReturnPct - marketValue).toFixed(2))
               : null,
         };
       };
@@ -1049,6 +1101,8 @@ serve(async (req) => {
         basketDate,
         weekStart,
         tradingToday,
+        marketStatus: market.status,
+        priceSource: market.status === "OPEN" && liveQuotes.size > 0 ? "live" : "last-close",
         phase: sessionEnded ? "closed" : "open",
         rows: todaysRows,
         ...withBenchmark(basketDate, summarize(todaysRows)),

@@ -90,7 +90,17 @@ export function useDailyBasket() {
     return affordable.slice(0, 30).map((s) => s.symbol);
   }, [ranked, budgetMax]);
 
-  return { stocks, ranked, topBuy, suggestedQty, candidates, budgetMax, isLoading, marketStatus: quotes?.marketStatus };
+  return {
+    stocks,
+    ranked,
+    topBuy,
+    suggestedQty,
+    candidates,
+    budgetMax,
+    isLoading,
+    marketStatus: quotes?.marketStatus,
+    quoteSource: quotes?.source,
+  };
 
 }
 
@@ -109,6 +119,8 @@ export interface BasketRow {
   /** 0-100 composite risk score. */
   risk_score: number | null;
   risk_label: string | null;
+  /** Current verified Angel One price while the NSE session is open. */
+  current_price: number | null;
 }
 export interface BasketDaySummary {
   basketDate: string;
@@ -132,6 +144,8 @@ export interface BasketDaySummary {
 export interface BasketAccuracyPayload extends BasketDaySummary {
   phase: "open" | "closed";
   tradingToday: boolean;
+  marketStatus: "OPEN" | "CLOSED";
+  priceSource: "live" | "last-close";
   history: BasketDaySummary[];
 }
 
@@ -163,8 +177,8 @@ export function useBasketAccuracy(symbols: string[]) {
     enabled: symbols.length > 0,
     // Re-check a few times an hour: the open snapshot is recorded once, then
     // rows are scored after the 15:30 IST close.
-    refetchInterval: 10 * 60 * 1000,
-    staleTime: 5 * 60 * 1000,
+    refetchInterval: (query) => query.state.data?.marketStatus === "OPEN" ? 15_000 : 120_000,
+    staleTime: 10_000,
     refetchOnWindowFocus: false,
     retry: 1,
   });

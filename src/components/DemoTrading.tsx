@@ -209,6 +209,7 @@ const DemoTrading = () => {
   const [ruleSl, setRuleSl] = useState("");
   const [ruleTgt, setRuleTgt] = useState("");
   const { data: quotes, isLoading } = useStockQuotes();
+  const canTrade = quotes?.marketStatus === "OPEN" && quotes.source === "live";
   const { toast } = useToast();
 
   const sessionId = useRef(getSessionId());
@@ -452,6 +453,16 @@ const DemoTrading = () => {
 
   const handleTrade = (side: "BUY" | "SELL") => {
     if (!liveSelected) return;
+    if (!canTrade) {
+      toast({
+        title: "Live market price required",
+        description: quotes?.marketStatus === "OPEN"
+          ? "Angel One live pricing is temporarily unavailable. Try refreshing shortly."
+          : "Paper orders can only be placed while the NSE market is open.",
+        variant: "destructive",
+      });
+      return;
+    }
     const qty = Math.max(1, Math.floor(quantity) || 1);
     const total = liveSelected.price * qty;
     let slPrice: number | undefined;
@@ -610,7 +621,7 @@ const DemoTrading = () => {
 
   // Only auto-exit while the market is open — closed-market last prices should
   // not trigger fills.
-  const monitored = quotes?.marketStatus === "OPEN" ? holdingsList : EMPTY_POSITIONS;
+  const monitored = canTrade ? holdingsList : EMPTY_POSITIONS;
   useAutoExitMonitoring(monitored, priceMap, handleAutoExit);
 
   // ---------- Auto-buy rules ----------
@@ -754,8 +765,8 @@ const DemoTrading = () => {
 
   // Only arm auto-buys while the market is open, so stale closing prices can't fill.
   const monitoredRules = useMemo(
-    () => (quotes?.marketStatus === "OPEN" ? autoBuyRules.filter((r) => r.status === "active") : []),
-    [quotes?.marketStatus, autoBuyRules],
+    () => (canTrade ? autoBuyRules.filter((r) => r.status === "active") : []),
+    [canTrade, autoBuyRules],
   );
   useAutoBuyMonitoring(monitoredRules, priceMap, handleAutoBuyTrigger);
 
@@ -809,13 +820,14 @@ const DemoTrading = () => {
         </p>
       </div>
 
-      {quotes?.source === "last-close" && (
+      {!canTrade && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-chart-down/40 bg-chart-down/10 p-3 text-xs text-chart-down">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Prices shown are the last closing values, not live quotes
-            {quotes?.marketStatus !== "OPEN" ? " (market closed)" : ""}. Orders
-            execute at these stale prices and auto-exit rules stay paused.
+            {quotes?.marketStatus === "OPEN"
+              ? "Angel One live pricing is temporarily unavailable."
+              : "Prices shown are the latest official closing values because the market is closed."}
+            {" "}Paper orders and automatic rules stay paused until verified live prices return.
           </span>
         </div>
       )}
@@ -963,7 +975,7 @@ const DemoTrading = () => {
                   onChange={(e) =>
                     setQuantity(Math.max(1, Math.floor(Number(e.target.value)) || 1))
                   }
-                  disabled={!liveSelected}
+                   disabled={!liveSelected || !canTrade}
                   className="w-20 rounded-lg border border-border bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                 />
               </td>
@@ -996,7 +1008,7 @@ const DemoTrading = () => {
                         type="number"
                         value={stopLossValue}
                         onChange={(e) => setStopLossValue(e.target.value)}
-                        disabled={!liveSelected}
+                   disabled={!liveSelected || !canTrade}
                         placeholder={stopLossMethod === "percentage" ? "2 (%)" : "Price"}
                         className="w-full rounded-lg border border-chart-down/40 bg-secondary/50 py-2 px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
                       />
@@ -1056,7 +1068,7 @@ const DemoTrading = () => {
               <td className="py-3 pr-4">
                 <button
                   onClick={() => handleTrade("BUY")}
-                  disabled={!liveSelected}
+                  disabled={!liveSelected || !canTrade}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-chart-up/40 bg-chart-up/10 px-4 py-2 text-sm font-semibold text-chart-up transition-colors hover:bg-chart-up/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ArrowUpCircle className="h-4 w-4" />
@@ -1068,7 +1080,7 @@ const DemoTrading = () => {
               <td className="py-3">
                 <button
                   onClick={() => handleTrade("SELL")}
-                  disabled={!liveSelected}
+                  disabled={!liveSelected || !canTrade}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-chart-down/40 bg-chart-down/10 px-4 py-2 text-sm font-semibold text-chart-down transition-colors hover:bg-chart-down/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ArrowDownCircle className="h-4 w-4" />
@@ -1256,20 +1268,20 @@ const DemoTrading = () => {
               </thead>
               <tbody>
                 {holdingsList.map((h) => {
-                  const livePrice = priceMap.get(h.symbol) ?? h.avgPrice;
+                  const marketPrice = priceMap.get(h.symbol);
                   const purchased = h.avgPrice * h.quantity;
-                  const current = livePrice * h.quantity;
-                  const pl = current - purchased;
-                  const plPct = purchased > 0 ? (pl / purchased) * 100 : 0;
-                  const up = pl >= 0;
+                  const current = marketPrice != null ? marketPrice * h.quantity : null;
+                  const pl = current != null ? current - purchased : null;
+                  const plPct = purchased > 0 && pl != null ? (pl / purchased) * 100 : null;
+                  const up = pl != null && pl >= 0;
                   const slDistancePct =
-                    h.stopLossPrice != null && livePrice > 0
-                      ? ((livePrice - h.stopLossPrice) / livePrice) * 100
+                    h.stopLossPrice != null && marketPrice != null && marketPrice > 0
+                      ? ((marketPrice - h.stopLossPrice) / marketPrice) * 100
                       : null;
                   const slNear = slDistancePct != null && slDistancePct < 1;
                   const tgtDistancePct =
-                    h.targetPrice != null && livePrice > 0
-                      ? ((h.targetPrice - livePrice) / livePrice) * 100
+                    h.targetPrice != null && marketPrice != null && marketPrice > 0
+                      ? ((h.targetPrice - marketPrice) / marketPrice) * 100
                       : null;
                   const tgtNear = tgtDistancePct != null && tgtDistancePct < 1;
                   return (
@@ -1290,16 +1302,14 @@ const DemoTrading = () => {
                           up ? "text-chart-up" : "text-chart-down"
                         }`}
                       >
-                        ₹{current.toFixed(2)}
+                         {current != null ? `₹${current.toFixed(2)}` : "Unavailable"}
                       </td>
                       <td
                         className={`py-2 pr-4 font-mono ${
                           up ? "text-chart-up" : "text-chart-down"
                         }`}
                       >
-                        {up ? "+" : ""}
-                        ₹{pl.toFixed(2)} ({up ? "+" : ""}
-                        {plPct.toFixed(2)}%)
+                         {pl != null && plPct != null ? `${up ? "+" : ""}₹${pl.toFixed(2)} (${up ? "+" : ""}${plPct.toFixed(2)}%)` : "—"}
                       </td>
                       <td className="py-2 pr-4 font-mono text-xs">
                         {h.stopLossPrice != null ? (
@@ -1308,7 +1318,7 @@ const DemoTrading = () => {
                               {slNear && <ShieldAlert className="h-3.5 w-3.5" />}
                               SL ₹{h.stopLossPrice.toFixed(2)}
                             </div>
-                            <div>{slDistancePct!.toFixed(2)}% away</div>
+                            {slDistancePct != null && <div>{slDistancePct.toFixed(2)}% away</div>}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -1321,7 +1331,7 @@ const DemoTrading = () => {
                               {tgtNear && <Target className="h-3.5 w-3.5" />}
                               ₹{h.targetPrice.toFixed(2)}
                             </div>
-                            <div>{tgtDistancePct!.toFixed(2)}% away</div>
+                            {tgtDistancePct != null && <div>{tgtDistancePct.toFixed(2)}% away</div>}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
