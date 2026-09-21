@@ -39,7 +39,17 @@ const LiveStat = ({ label, value, tone }: { label: string; value: string; tone?:
 const TOOLTIP_WIDTH = 260;
 const TOOLTIP_EST_HEIGHT = 320;
 
-const RowLine = ({ r, live, quoteSource }: { r: BasketRow; live?: StockQuote; quoteSource?: "live" | "last-close" }) => {
+const RowLine = ({
+  r,
+  live,
+  quoteSource,
+  be,
+}: {
+  r: BasketRow;
+  live?: StockQuote;
+  quoteSource?: "live" | "last-close";
+  be?: BreakevenRow;
+}) => {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number; flip: boolean } | null>(null);
