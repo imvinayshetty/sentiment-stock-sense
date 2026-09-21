@@ -82,20 +82,22 @@ export function useStockQuotes() {
   });
 }
 
-export type HistoryRange = "15d" | "1mo" | "1y" | "3y";
+export type HistoryRange = "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y" | "5y";
 
-export function useHistoricalData(symbol: string, range: HistoryRange = "1mo") {
+export function useHistoricalData(symbol: string, range: HistoryRange = "1d") {
   return useQuery<PredictionData[]>({
     queryKey: ["historical", symbol, range],
     queryFn: async () => {
       const result = await callFunction("angel-one-data", { action: "historical", symbol, range });
       if (!result.success) throw new Error(result.error);
 
-      // Longer windows need the year on the axis to stay readable.
-      const labelOpts: Intl.DateTimeFormatOptions =
-        range === "1y" || range === "3y"
-          ? { month: "short", year: "2-digit" }
-          : { month: "short", day: "numeric" };
+      const labelOpts: Intl.DateTimeFormatOptions = range === "1d"
+        ? { hour: "2-digit", minute: "2-digit" }
+        : range === "5d"
+          ? { weekday: "short", hour: "2-digit", minute: "2-digit" }
+          : range === "1y" || range === "5y"
+            ? { month: "short", year: "2-digit" }
+            : { month: "short", day: "numeric" };
 
       // Transform candle data [timestamp, open, high, low, close, volume].
       // candle[0] is normally an ISO string but defensively handle Unix seconds.
