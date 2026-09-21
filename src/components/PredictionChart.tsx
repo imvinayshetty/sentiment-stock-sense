@@ -2,11 +2,10 @@ import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { CandlestickChart } from "lucide-react";
 import { useHistoricalData, useForecast, type HistoryRange } from "@/hooks/useAngelOneData";
-import CandleChart from "@/components/CandleChart";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface PredictionChartProps {
   symbol: string;
+  onCandleView?: () => void;
 }
 
 const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
@@ -19,9 +18,8 @@ const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
   { value: "5y", label: "5 years" },
 ];
 
-const PredictionChart = ({ symbol }: PredictionChartProps) => {
+const PredictionChart = ({ symbol, onCandleView }: PredictionChartProps) => {
   const [range, setRange] = useState<HistoryRange>("1d");
-  const [candleOpen, setCandleOpen] = useState(false);
   const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)?.label ?? "1 day";
   const { data: histData, isLoading } = useHistoricalData(symbol, range);
   const historicalData = histData ?? [];
@@ -116,7 +114,7 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
         <div className="flex flex-wrap items-center gap-2">
           {rangePicker}
           <button
-            onClick={() => setCandleOpen(true)}
+            onClick={onCandleView}
             className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
           >
             <CandlestickChart className="h-4 w-4" />
@@ -131,22 +129,6 @@ const PredictionChart = ({ symbol }: PredictionChartProps) => {
         </div>
       </div>
 
-      <Dialog open={candleOpen} onOpenChange={setCandleOpen}>
-        <DialogContent className="max-w-[95vw] sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="flex flex-wrap items-center gap-2">
-              <CandlestickChart className="h-5 w-5 text-primary" />
-              <span>{symbol} · candles</span>
-              <span className="text-sm font-normal text-muted-foreground">Last {rangeLabel} + forecast</span>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center gap-2">{rangePicker}</div>
-          <CandleChart data={data as any} height={400} />
-          <p className="text-xs text-muted-foreground">
-            Green candles closed above their open, red below. The dashed line is the 7-day projection.
-          </p>
-        </DialogContent>
-      </Dialog>
       <ResponsiveContainer width="100%" height={350}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
