@@ -587,6 +587,142 @@ function mapHistorical(result: any) {
     .filter(Boolean);
 }
 
+// ---------- Intraday charges & margin (Angel One calculators) ----------
+// ScripMaster gives Angel One's internal instrument tokens, which the brokerage
+// and margin calculators require instead of the plain symbol. ~5MB JSON, so it
+// is fetched at most once per cold start and only when a symbol is not in the
+// curated ANGEL_TOKENS map.
+let scripTokenCache: Record<string, string> | null = null;
+let scripTokenPromise: Promise<Record<string, string>> | null = null;
+async function getScripTokens(): Promise<Record<string, string>> {
+  if (scripTokenCache) return scripTokenCache;
+  if (!scripTokenPromise) {
+    scripTokenPromise = (async () => {
+      const res = await fetch(
+        "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json",
+      );
+      const list = await res.json();
+      const map: Record<string, string> = {};
+      for (const row of Array.isArray(list) ? list : []) {
+        if (row?.exch_seg !== "NSE") continue;
+        const sym = String(row.symbol ?? "");
+        if (!sym.endsWith("-EQ")) continue;
+        map[sym.slice(0, -3)] = String(row.token);
+      }
+      scripTokenCache = map;
+      return map;
+    })().catch((e) => {
+      scripTokenPromise = null;
+      throw e;
+    });
+  }
+  return scripTokenPromise;
+}
+
+async function resolveAngelToken(symbol: string): Promise<string | null> {
+  const curated = ANGEL_TOKENS[symbol];
+  if (curated) return curated;
+  try {
+    const map = await getScripTokens();
+    return map[symbol] ?? null;
+  } catch (e) {
+    console.error("ScripMaster lookup failed:", e);
+    return null;
+  }
+}
+
+async function angelPost(supabase: any, path: string, body: unknown): Promise<any> {
+  const apiKey = Deno.env.get("ANGEL_ONE_API_KEY");
+  if (!apiKey) throw new Error("Angel One credentials missing");
+  const call = (jwt: string) => fetch(`https://apiconnect.angelone.in${path}`, {
+    method: "POST",
+    headers: { ...angelHeaders(apiKey), Authorization: `Bearer ${jwt}` },
+    body: JSON.stringify(body),
+  });
+  let jwt = await getAngelJwt(supabase);
+  let res = await call(jwt);
+  let json = await res.json().catch(() => null);
+  if (!json?.data && (res.status === 401 || /token|invalid|expired|unauthor/i.test(JSON.stringify(json?.message ?? "")))) {
+    jwt = await getAngelJwt(supabase, true);
+    res = await call(jwt);
+    json = await res.json().catch(() => null);
+  }
+  return json;
+}
+
+/**
+ * Round-trip (buy + sell) intraday charges for `qty` shares at `price`.
+ * Angel One's calculator rejects decimal prices with AB2001, so the price is
+ * sent as an integer string. Returns null when the API gives nothing usable.
+ */
+async function fetchRoundTripCharges(
+  supabase: any,
+  symbol: string,
+  token: string,
+  price: number,
+  qty: number,
+): Promise<number | null> {
+  const intPrice = String(Math.max(1, Math.round(price)));
+  const leg = (transaction_type: "BUY" | "SELL") => ({
+    product_type: "INTRADAY",
+    transaction_type,
+    quantity: String(qty),
+    price: intPrice,
+    exchange: "NSE",
+    symbol_name: symbol,
+    token,
+  });
+  try {
+    const json = await angelPost(supabase, "/rest/secure/angelbroking/brokerage/v1/estimateCharges", {
+      orders: [leg("BUY"), leg("SELL")],
+    });
+    const summary = json?.data?.summary ?? json?.data;
+    const total = Number(summary?.total_charges ?? summary?.totalCharges);
+    return Number.isFinite(total) && total > 0 ? total : null;
+  } catch (e) {
+    console.error(`estimateCharges failed for ${symbol}:`, e);
+    return null;
+  }
+}
+
+/** Statutory fallback used when the charges API is unavailable (round trip). */
+function estimateRoundTripCharges(price: number, qty: number): number {
+  const turnover = price * qty;
+  const stt = turnover * 0.00025;              // 0.025% sell side
+  const exchange = turnover * 2 * 0.0000322;   // 0.00322% per side
+  const sebi = turnover * 2 * 0.000001;
+  const stamp = turnover * 0.00003;            // 0.003% buy side
+  const gst = (exchange + sebi) * 0.18;
+  return stt + exchange + sebi + stamp + gst;
+}
+
+/** Intraday margin for one share. Falls back to 20% of price (5x leverage). */
+async function fetchIntradayMargin(
+  supabase: any,
+  token: string,
+  price: number,
+): Promise<{ margin: number; source: "api" | "estimate" }> {
+  try {
+    const json = await angelPost(supabase, "/rest/secure/angelbroking/margin/v1/batch", {
+      positions: [{
+        exchange: "NSE",
+        qty: 1,
+        price,
+        productType: "INTRADAY",
+        token,
+        tradeType: "BUY",
+      }],
+    });
+    const required = Number(json?.data?.totalMarginRequired);
+    if (Number.isFinite(required) && required > 0) return { margin: required, source: "api" };
+  } catch (e) {
+    console.error("margin batch failed:", e);
+  }
+  // AB4022 / null data: approximate NSE equity intraday margin.
+  return { margin: price * 0.2, source: "estimate" };
+}
+
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -1110,7 +1246,141 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Per-stock intraday breakeven: does today's forecast gain clear Angel One's
+    // round-trip charges, and how many shares fit the budget on intraday margin?
+    if (action === "breakeven") {
+      const symbols = (url.searchParams.get("symbols") ?? "")
+        .split(",")
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => s && isValidSymbol(s))
+        .slice(0, 10);
+      const budget = Number(url.searchParams.get("budget") ?? 0);
+      if (!symbols.length || !(budget > 0)) {
+        return new Response(JSON.stringify({ success: false, error: "symbols and budget are required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const supabase = getSupabase();
+      const market = getMarketStatus();
+      let liveQuotes = new Map<string, any>();
+      if (market.status === "OPEN") {
+        try {
+          liveQuotes = new Map(
+            mapAngelQuotes(await fetchAngelSnapshot(supabase)).map((q) => [q.symbol, q]),
+          );
+        } catch (error) {
+          console.error("Breakeven live snapshot failed:", error);
+        }
+      }
+
+      // 3 at a time keeps us well under Angel One's 10 requests/sec limit
+      // (each stock makes one charges call plus one margin call).
+      const rows = await fetchInBatches(symbols, 3, async (sym) => {
+        try {
+          const info = resolveSymbolInfo(sym);
+          const chart = await fetchChart(info.yahooSymbol, "3mo", "1d");
+          const candles = mapHistorical(chart);
+          const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
+          const forecastResult = computeForecast(closes);
+          if (!forecastResult) return null;
+
+          const live = liveQuotes.get(sym);
+          const price = Number(live?.price ?? forecastResult.lastPrice);
+          if (!(price > 0)) return null;
+          const predicted = forecastResult.forecast[0].forecast;
+          const expectedGain = predicted - price;
+
+          const token = await resolveAngelToken(sym);
+          const marginInfo = token
+            ? await fetchIntradayMargin(supabase, token, price)
+            : { margin: price * 0.2, source: "estimate" as const };
+
+          // Charges include per-order components, so the per-share cost depends
+          // on size: price the round trip at the quantity the budget allows.
+          const plannedShares = Math.max(
+            1,
+            Math.floor((budget / symbols.length) / Math.max(1, marginInfo.margin)),
+          );
+          let charges: number | null = token
+            ? await fetchRoundTripCharges(supabase, sym, token, price, plannedShares)
+            : null;
+          const chargeSource: "api" | "estimate" = charges != null ? "api" : "estimate";
+          if (charges == null) charges = estimateRoundTripCharges(price, plannedShares);
+
+          const breakevenPerShare = charges / plannedShares;
+          const netPerShare = expectedGain - breakevenPerShare;
+
+          return {
+            symbol: sym,
+            name: info.name,
+            price: Number(price.toFixed(2)),
+            predictedPrice: Number(predicted.toFixed(2)),
+            expectedGain: Number(expectedGain.toFixed(2)),
+            expectedGainPct: Number(((expectedGain / price) * 100).toFixed(2)),
+            breakevenPerShare: Number(breakevenPerShare.toFixed(2)),
+            breakevenPct: Number(((breakevenPerShare / price) * 100).toFixed(2)),
+            netPerShare: Number(netPerShare.toFixed(2)),
+            profitable: netPerShare > 0,
+            marginPerShare: Number(marginInfo.margin.toFixed(2)),
+            marginSource: marginInfo.source,
+            chargeSource,
+            priceSource: live ? "live" : "last-close",
+            // Filled in below once the budget is split across profitable names.
+            shares: 0,
+            marginRequired: 0,
+            totalCharges: 0,
+            projectedProfit: 0,
+          };
+        } catch (e) {
+          console.error(`Breakeven failed for ${sym}:`, e);
+          return null;
+        }
+      });
+
+      const analysed = rows.filter((r): r is NonNullable<typeof r> => Boolean(r));
+      const profitable = analysed
+        .filter((r) => r.profitable)
+        .sort((a, b) => b.netPerShare / Math.max(1, b.marginPerShare) - a.netPerShare / Math.max(1, a.marginPerShare));
+
+      // Equal-weight the budget across the trades that clear breakeven, then size
+      // each position by the intraday margin the API quoted for it.
+      if (profitable.length) {
+        const perStock = budget / profitable.length;
+        for (const r of profitable) {
+          const shares = Math.floor(perStock / Math.max(1, r.marginPerShare));
+          if (shares < 1) continue;
+          const legCharges = await fetchRoundTripCharges(supabase, r.symbol, (await resolveAngelToken(r.symbol)) ?? "", r.price, shares);
+          const totalCharges = legCharges ?? estimateRoundTripCharges(r.price, shares);
+          r.shares = shares;
+          r.marginRequired = Number((shares * r.marginPerShare).toFixed(2));
+          r.totalCharges = Number(totalCharges.toFixed(2));
+          r.projectedProfit = Number((r.expectedGain * shares - totalCharges).toFixed(2));
+        }
+      }
+
+      const skipped = analysed.filter((r) => !r.profitable);
+      const totalProjectedProfit = Number(
+        profitable.reduce((a, r) => a + r.projectedProfit, 0).toFixed(2),
+      );
+      const totalMargin = Number(profitable.reduce((a, r) => a + r.marginRequired, 0).toFixed(2));
+
+      return new Response(JSON.stringify({
+        success: true,
+        budget,
+        marketStatus: market.status,
+        istTime: market.istTime,
+        priceSource: market.status === "OPEN" && liveQuotes.size > 0 ? "live" : "last-close",
+        rows: [...profitable, ...skipped],
+        profitableCount: profitable.length,
+        skippedCount: skipped.length,
+        totalProjectedProfit,
+        totalMargin,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "symbols") {
+
       const symbols = Object.entries(STOCK_TOKENS).map(([stockSymbol, info]) => ({
         symbol: stockSymbol,
         name: info.name,
