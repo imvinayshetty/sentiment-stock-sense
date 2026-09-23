@@ -215,6 +215,13 @@ const IntradayBreakeven = () => {
                   </span>
                   {" · margin "}
                   <span className="font-mono text-foreground">{inr(data.totalMargin)}</span>
+                  {data.budgetUtilisation != null && (
+                    <>
+                      {" · "}
+                      <span className="font-mono text-foreground">{data.budgetUtilisation.toFixed(1)}%</span>
+                      {" of budget used"}
+                    </>
+                  )}
                 </>
               )}
             </>
@@ -242,6 +249,14 @@ const IntradayBreakeven = () => {
       )}
       {data && data.rows.length === 0 && !isLoading && (
         <p className="text-sm text-muted-foreground">No stocks available to analyse right now.</p>
+      )}
+
+      {data && data.rows.some((r) => r.shares > 0) && (
+        <PortfolioCard
+          rows={data.rows.filter((r) => r.shares > 0)}
+          budget={budgetMax}
+          utilisation={data.budgetUtilisation}
+        />
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
