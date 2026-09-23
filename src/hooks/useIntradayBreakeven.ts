@@ -22,6 +22,8 @@ export interface BreakevenRow {
   marginRequired: number;
   totalCharges: number;
   projectedProfit: number;
+  /** Share of the budget this position's margin consumes. */
+  weightPct?: number;
 }
 
 export interface BreakevenPayload {
@@ -36,6 +38,8 @@ export interface BreakevenPayload {
   skippedCount: number;
   totalProjectedProfit: number;
   totalMargin: number;
+  /** Percentage of the budget actually deployed as margin. */
+  budgetUtilisation?: number;
 }
 
 /**
@@ -71,7 +75,7 @@ export function useIntradayBreakeven(symbols: string[], budget: number | null, e
       }
     },
     enabled: enabled && clean.length > 0 && !!budget && budget > 0,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
   });
