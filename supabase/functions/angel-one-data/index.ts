@@ -1407,8 +1407,8 @@ serve(async (req) => {
       );
       const totalMargin = Number(tradeable.reduce((a, r) => a + r.marginRequired, 0).toFixed(2));
 
-      // Strip the internal token before responding.
-      const stripToken = ({ _token, ...rest }: Record<string, unknown>) => rest;
+      // Strip internal fields before responding.
+      const stripToken = ({ _token, _chargePerShare, ...rest }: Record<string, unknown>) => rest;
 
       return new Response(JSON.stringify({
         success: true,
@@ -1422,6 +1422,7 @@ serve(async (req) => {
         skippedCount: skipped.length,
         totalProjectedProfit,
         totalMargin,
+        budgetUtilisation: Number(((totalMargin / budget) * 100).toFixed(1)),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
