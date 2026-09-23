@@ -147,7 +147,11 @@ const Index = () => {
 
         {/* Intraday breakeven & suggestions (collapsed by default) */}
         <div className="animate-fade-in-up" style={{ animationDelay: "378ms" }}>
-          <CollapsibleSection title="Intraday Breakeven & Suggestions" icon={<Calculator className="h-5 w-5 text-primary" />}>
+          <CollapsibleSection
+            title="Intraday Breakeven & Suggestions"
+            icon={<Calculator className="h-5 w-5 text-primary" />}
+            hint="Charge-adjusted intraday profit estimates"
+          >
             <IntradayBreakeven />
           </CollapsibleSection>
         </div>

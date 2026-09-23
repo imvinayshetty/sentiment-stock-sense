@@ -182,6 +182,26 @@ function getSessionId(): string {
   }
 }
 
+/** Guards against malformed saved rules reaching the trigger logic. */
+export const isValidAutoBuyRule = (r: unknown): r is AutoBuyRule => {
+  if (typeof r !== "object" || r === null) return false;
+  const o = r as Record<string, unknown>;
+  return (
+    typeof o.id === "string" &&
+    o.id.length > 0 &&
+    typeof o.symbol === "string" &&
+    o.symbol.length > 0 &&
+    typeof o.triggerPrice === "number" &&
+    Number.isFinite(o.triggerPrice) &&
+    o.triggerPrice > 0 &&
+    typeof o.quantity === "number" &&
+    Number.isFinite(o.quantity) &&
+    o.quantity >= 1 &&
+    typeof o.status === "string" &&
+    ["active", "filled", "cancelled"].includes(o.status)
+  );
+};
+
 const DemoTrading = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<StockQuote | null>(null);
@@ -247,7 +267,7 @@ const DemoTrading = () => {
           if (remoteTrades && remoteTrades.length >= tradesRef.current.length) {
             setTrades(remoteTrades);
             if (typeof s.balance === "number") setBalance(s.balance);
-            if (Array.isArray(s.autoBuyRules)) setAutoBuyRules(s.autoBuyRules);
+            if (Array.isArray(s.autoBuyRules)) setAutoBuyRules(s.autoBuyRules.filter(isValidAutoBuyRule));
           }
         }
       } catch (e) {
@@ -420,12 +440,16 @@ const DemoTrading = () => {
   const handleTopUp = () => {
     const amount = Number(topUp);
     if (!amount || amount <= 0) return;
-    const next = Math.min(MAX_BALANCE, balance + amount);
-    setBalance(next);
     setTopUp("");
-    toast({
-      title: "Balance topped up (demo)",
-      description: `Added ₹${(next - balance).toFixed(2)} · Balance ₹${next.toFixed(2)}`,
+    // Compute the credited amount inside the updater so rapid taps always read
+    // the freshest balance (and report the real amount added).
+    setBalance((b) => {
+      const next = Math.min(MAX_BALANCE, b + amount);
+      toast({
+        title: "Balance topped up (demo)",
+        description: `Added ₹${(next - b).toFixed(2)} · Balance ₹${next.toFixed(2)}`,
+      });
+      return next;
     });
   };
 
@@ -626,8 +650,12 @@ const DemoTrading = () => {
 
   // ---------- Auto-buy rules ----------
   const balanceRef = useRef(balance);
+  // Funds locked by rules that fired in this same tick but whose setBalance has
+  // not settled yet — prevents two rules from spending the same rupees.
+  const pendingDebitRef = useRef(0);
   useEffect(() => {
     balanceRef.current = balance;
+    pendingDebitRef.current = 0;
   }, [balance]);
   const rulesRef = useRef(autoBuyRules);
   useEffect(() => {
@@ -647,7 +675,15 @@ const DemoTrading = () => {
       toast({ title: "Invalid trigger price", description: "Enter a price above 0.", variant: "destructive" });
       return;
     }
-    if (liveSelected.price > 0 && trigger >= liveSelected.price) {
+    if (!(liveSelected.price > 0)) {
+      toast({
+        title: "No live price yet",
+        description: `Wait for a live price on ${liveSelected.symbol} before setting a trigger.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (trigger >= liveSelected.price) {
       toast({
         title: "Trigger too high",
         description: `Enter a price below the current ₹${liveSelected.price.toFixed(2)} so the rule waits for a dip.`,
@@ -724,14 +760,15 @@ const DemoTrading = () => {
       const rule = rulesRef.current.find((r) => r.id === ruleId);
       if (!rule || rule.status !== "active") return;
       const total = price * rule.quantity;
-      if (total > balanceRef.current) {
+      const available = balanceRef.current - pendingDebitRef.current;
+      if (total > available) {
         setAutoBuyRules((rs) =>
           rs.map((r) =>
             r.id === ruleId
               ? {
                   ...r,
                   status: "cancelled" as const,
-                  note: `Needed ₹${total.toFixed(2)}, balance was ₹${balanceRef.current.toFixed(2)}`,
+                  note: `Needed ₹${total.toFixed(2)}, available was ₹${available.toFixed(2)}`,
                 }
               : r,
           ),
@@ -745,6 +782,7 @@ const DemoTrading = () => {
       }
       const slPrice = rule.stopLossPct != null ? price * (1 - rule.stopLossPct / 100) : undefined;
       const tgtPrice = rule.targetPct != null ? price * (1 + rule.targetPct / 100) : undefined;
+      pendingDebitRef.current += total; // lock the funds synchronously
       setBalance((b) => b - total);
       setTrades((t) =>
         [
