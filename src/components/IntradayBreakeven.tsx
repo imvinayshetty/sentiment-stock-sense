@@ -7,12 +7,94 @@ import { useIntradayBreakeven, type BreakevenRow } from "@/hooks/useIntradayBrea
 const inr = (v: number) =>
   `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const Stat = ({ label, value, tone }: { label: string; value: string; tone?: string }) => (
+/** Marks any figure derived from the statutory fallback rather than a live reading. */
+const EstBadge = () => (
+  <span className="ml-1 rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">est.</span>
+);
+
+const Stat = ({
+  label,
+  value,
+  tone,
+  estimated,
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+  estimated?: boolean;
+}) => (
   <div className="flex items-center justify-between gap-3 text-xs">
-    <span className="text-muted-foreground">{label}</span>
+    <span className="text-muted-foreground">
+      {label}
+      {estimated && <EstBadge />}
+    </span>
     <span className={`font-mono font-medium ${tone ?? "text-foreground"}`}>{value}</span>
   </div>
 );
+
+const PortfolioCard = ({ rows, budget, utilisation }: { rows: BreakevenRow[]; budget: number; utilisation?: number }) => {
+  const totalMargin = rows.reduce((a, r) => a + r.marginRequired, 0);
+  const totalProfit = rows.reduce((a, r) => a + r.projectedProfit, 0);
+  return (
+    <div className="mb-4 rounded-lg border border-border bg-secondary/30 p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-foreground">Suggested allocation</span>
+        <span className="text-xs text-muted-foreground">
+          {rows.length} stocks · {(utilisation ?? (totalMargin / budget) * 100).toFixed(1)}% of budget used
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-muted-foreground">
+            <tr className="text-left">
+              <th className="py-1 pr-3 font-medium">Stock</th>
+              <th className="py-1 pr-3 text-right font-medium">Shares</th>
+              <th className="py-1 pr-3 text-right font-medium">Margin</th>
+              <th className="py-1 pr-3 font-medium">Weight</th>
+              <th className="py-1 text-right font-medium">Projected</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const weight = r.weightPct ?? (r.marginRequired / budget) * 100;
+              return (
+                <tr key={r.symbol} className="border-t border-border/60">
+                  <td className="py-1.5 pr-3 font-mono font-medium text-foreground">{r.symbol}</td>
+                  <td className="py-1.5 pr-3 text-right font-mono text-foreground">{r.shares}</td>
+                  <td className="py-1.5 pr-3 text-right font-mono text-foreground">{inr(r.marginRequired)}</td>
+                  <td className="py-1.5 pr-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, weight)}%` }} />
+                      </div>
+                      <span className="font-mono text-muted-foreground">{weight.toFixed(1)}%</span>
+                    </div>
+                  </td>
+                  <td className={`py-1.5 text-right font-mono ${r.projectedProfit >= 0 ? "text-chart-up" : "text-chart-down"}`}>
+                    {inr(r.projectedProfit)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-border font-medium">
+              <td className="py-1.5 pr-3 text-muted-foreground">Total</td>
+              <td />
+              <td className="py-1.5 pr-3 text-right font-mono text-foreground">{inr(totalMargin)}</td>
+              <td className="py-1.5 pr-3 font-mono text-muted-foreground">
+                {((totalMargin / budget) * 100).toFixed(1)}%
+              </td>
+              <td className={`py-1.5 text-right font-mono ${totalProfit >= 0 ? "text-chart-up" : "text-chart-down"}`}>
+                {inr(totalProfit)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+};
 
 const RowCard = ({ r }: { r: BreakevenRow }) => (
   <div
@@ -50,12 +132,19 @@ const RowCard = ({ r }: { r: BreakevenRow }) => (
       />
       <Stat
         label="Breakeven cost"
-        value={`${inr(r.breakevenPerShare)} (${r.breakevenPct.toFixed(2)}%)`}
+        value={`${inr(r.breakevenPerShare)} (${r.breakevenPct.toFixed(3)}%)`}
+        estimated={r.chargeSource === "estimate"}
       />
       <Stat
         label="Net after charges"
         value={inr(r.netPerShare)}
         tone={r.netPerShare >= 0 ? "text-chart-up" : "text-chart-down"}
+        estimated={r.chargeSource === "estimate"}
+      />
+      <Stat
+        label="Margin / share"
+        value={inr(r.marginPerShare)}
+        estimated={r.marginSource === "estimate"}
       />
     </div>
 
@@ -65,13 +154,13 @@ const RowCard = ({ r }: { r: BreakevenRow }) => (
         <span className="font-mono font-semibold text-chart-up">{inr(r.projectedProfit)}</span> · charges{" "}
         <span className="font-mono">{inr(r.totalCharges)}</span> · margin needed{" "}
         <span className="font-mono">{inr(r.marginRequired)}</span>
-        {r.marginSource === "estimate" && <span className="text-muted-foreground"> (approx.)</span>}
+        {r.marginSource === "estimate" && <EstBadge />}
       </p>
     )}
     {r.profitable && r.shares === 0 && (
       <p className="mt-2 text-xs text-chart-neutral">
-        The forecast clears the charges, but one share's margin costs more than this stock's share of
-        your budget — a higher budget would make this trade possible.
+        The forecast clears the charges, but one share's margin costs more than the budget left after
+        the higher-ranked stocks — a higher budget would make this trade possible.
       </p>
     )}
     {!r.profitable && (
