@@ -1319,19 +1319,15 @@ serve(async (req) => {
             ? await fetchIntradayMargin(supabase, token, price)
             : { margin: price * 0.2, source: "estimate" as const };
 
-          // Charges include per-order components, so the per-share cost depends
-          // on size: price the round trip at the quantity the budget allows.
-          const plannedShares = Math.max(
-            1,
-            Math.floor((budget / symbols.length) / Math.max(1, marginInfo.margin)),
-          );
+          // Intraday NSE charge components all scale linearly with turnover, so
+          // probe once at qty = 1 and multiply — one API call per stock.
           let charges: number | null = token
-            ? await fetchRoundTripCharges(supabase, sym, token, price, plannedShares)
+            ? await fetchRoundTripCharges(supabase, sym, token, price, 1)
             : null;
           const chargeSource: "api" | "estimate" = charges != null ? "api" : "estimate";
-          if (charges == null) charges = estimateRoundTripCharges(price, plannedShares);
+          if (charges == null) charges = estimateRoundTripCharges(price, 1);
 
-          const breakevenPerShare = charges / plannedShares;
+          const breakevenPerShare = charges;
           const netPerShare = expectedGain - breakevenPerShare;
 
           return {
@@ -1341,21 +1337,23 @@ serve(async (req) => {
             predictedPrice: Number(predicted.toFixed(2)),
             expectedGain: Number(expectedGain.toFixed(2)),
             expectedGainPct: Number(((expectedGain / price) * 100).toFixed(2)),
-            breakevenPerShare: Number(breakevenPerShare.toFixed(2)),
-            breakevenPct: Number(((breakevenPerShare / price) * 100).toFixed(2)),
+            breakevenPerShare: Number(breakevenPerShare.toFixed(4)),
+            breakevenPct: Number(((breakevenPerShare / price) * 100).toFixed(3)),
             netPerShare: Number(netPerShare.toFixed(2)),
             profitable: netPerShare > 0,
             marginPerShare: Number(marginInfo.margin.toFixed(2)),
             marginSource: marginInfo.source,
             chargeSource,
             priceSource: live ? "live" : "last-close",
-            // Filled in below once the budget is split across profitable names.
+            // Filled in below by the budget allocation pass.
             shares: 0,
             marginRequired: 0,
             totalCharges: 0,
             projectedProfit: 0,
-            // Internal only: reused by the sizing loop, stripped before responding.
+            weightPct: 0,
+            // Internal only: stripped before responding.
             _token: token,
+            _chargePerShare: breakevenPerShare,
           };
         } catch (e) {
           console.error(`Breakeven failed for ${sym}:`, e);
@@ -1364,25 +1362,37 @@ serve(async (req) => {
       });
 
       const analysed = rows.filter((r): r is NonNullable<typeof r> => Boolean(r));
+      // Rank by return on margin deployed, so the budget goes to the best ROI first.
       const profitable = analysed
         .filter((r) => r.profitable)
         .sort((a, b) => b.netPerShare / Math.max(1, b.marginPerShare) - a.netPerShare / Math.max(1, a.marginPerShare));
 
-      // Equal-weight the budget across the trades that clear breakeven, then size
-      // each position by the intraday margin the API quoted for it.
+      // Greedy diversified allocation: walk the ROI ranking, buy as many shares as
+      // the remaining budget allows, but cap any single stock at 40% of the budget
+      // so at least three names share the portfolio. A second pass hands leftover
+      // budget (from caps and floor() rounding) back to the same ranking.
+      const MAX_WEIGHT_PER_STOCK = 0.4;
+      let remaining = budget;
       if (profitable.length) {
-        const perStock = budget / profitable.length;
+        const cap = budget * MAX_WEIGHT_PER_STOCK;
+        for (let pass = 0; pass < 2; pass++) {
+          for (const r of profitable) {
+            const perShare = Math.max(1, r.marginPerShare);
+            const room = Math.min(remaining, cap - r.shares * perShare);
+            const extra = Math.floor(room / perShare);
+            if (extra < 1) continue;
+            r.shares += extra;
+            remaining -= extra * perShare;
+          }
+          if (remaining < 1) break;
+        }
         for (const r of profitable) {
-          const shares = Math.floor(perStock / Math.max(1, r.marginPerShare));
-          if (shares < 1) continue;
-          const legCharges = r._token
-            ? await fetchRoundTripCharges(supabase, r.symbol, r._token, r.price, shares)
-            : null;
-          const totalCharges = legCharges ?? estimateRoundTripCharges(r.price, shares);
-          r.shares = shares;
-          r.marginRequired = Number((shares * r.marginPerShare).toFixed(2));
+          if (r.shares < 1) continue;
+          const totalCharges = r._chargePerShare * r.shares;
+          r.marginRequired = Number((r.shares * r.marginPerShare).toFixed(2));
           r.totalCharges = Number(totalCharges.toFixed(2));
-          r.projectedProfit = Number((r.expectedGain * shares - totalCharges).toFixed(2));
+          r.projectedProfit = Number((r.expectedGain * r.shares - totalCharges).toFixed(2));
+          r.weightPct = Number(((r.marginRequired / budget) * 100).toFixed(1));
         }
       }
 
