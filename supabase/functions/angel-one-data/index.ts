@@ -318,21 +318,63 @@ const NSE_HOLIDAYS = new Set<string>([
   "2027-08-26", "2027-10-02", "2027-10-29", "2027-11-17", "2027-12-25",
 ]);
 
-function computeForecast(closes: number[]) {
+// Sector map used for basket diversification and allocation penalties.
+const SECTOR: Record<string, string> = {
+  TCS: "IT", INFY: "IT", WIPRO: "IT", HCLTECH: "IT", TECHM: "IT",
+  HDFCBANK: "BANK", ICICIBANK: "BANK", SBIN: "BANK", KOTAKBANK: "BANK", AXISBANK: "BANK", INDUSINDBK: "BANK",
+  BAJFINANCE: "FIN", BAJAJFINSV: "FIN",
+  SUNPHARMA: "PHARMA", DRREDDY: "PHARMA", CIPLA: "PHARMA", DIVISLAB: "PHARMA", APOLLOHOSP: "PHARMA",
+  TATAMOTORS: "AUTO", MARUTI: "AUTO", EICHERMOT: "AUTO", HEROMOTOCO: "AUTO", M_M: "AUTO",
+  ITC: "FMCG", HINDUNILVR: "FMCG", NESTLEIND: "FMCG", BRITANNIA: "FMCG", TATACONSUM: "FMCG", ASIANPAINT: "FMCG", TITAN: "FMCG",
+  JSWSTEEL: "METAL", TATASTEEL: "METAL", HINDALCO: "METAL", COALINDIA: "METAL",
+  RELIANCE: "ENERGY", ONGC: "ENERGY", BPCL: "ENERGY", POWERGRID: "ENERGY", NTPC: "ENERGY",
+  LT: "INFRA", ULTRACEMCO: "INFRA", GRASIM: "INFRA", ADANIPORTS: "INFRA",
+  BHARTIARTL: "TELECOM", UPL: "CHEM",
+};
+const sectorOf = (sym: string) => SECTOR[sym] ?? "OTHER";
+
+/** Weighted least squares on index -> value. */
+function weightedRegression(values: number[], weights: number[]) {
+  let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  values.forEach((y, x) => {
+    const w = weights[x] ?? 1;
+    sw += w; sx += w * x; sy += w * y; sxx += w * x * x; sxy += w * x * y;
+  });
+  const denom = sw * sxx - sx * sx;
+  const slope = denom !== 0 ? (sw * sxy - sx * sy) / denom : 0;
+  const intercept = (sy - slope * sx) / (sw || 1);
+  return { slope, intercept };
+}
+
+function computeForecast(closes: number[], volumes: number[] = []) {
   if (closes.length < 5) return null;
   const window = closes.slice(-30);
   const n = window.length;
 
-  // Simple Exponential Smoothing.
-  // α=0.3 chosen for stability over the 30-day window (~5-day effective memory).
-  // Higher α (0.4–0.5) adapts faster and suits very volatile names, but is noisier;
-  // 0.3 is a deliberate stability-over-reactivity trade-off for the blended model.
-  const SES_ALPHA = 0.3;
-  let s = window[0];
-  for (const c of window) s = SES_ALPHA * c + (1 - SES_ALPHA) * s;
+  // Holt's double exponential smoothing: level and trend update separately,
+  // so the forecast reacts to trend changes without the noise of a high α.
+  const ALPHA = 0.3;
+  const BETA = 0.1;
+  let level = window[0];
+  let trend = n > 1 ? window[1] - window[0] : 0;
+  for (let i = 1; i < n; i++) {
+    const prevLevel = level;
+    level = ALPHA * window[i] + (1 - ALPHA) * (level + trend);
+    trend = BETA * (level - prevLevel) + (1 - BETA) * trend;
+  }
 
-  // Linear regression trend
-  const { slope, intercept } = linearRegression(window);
+  // Volume-weighted linear regression: days on >2x the 20-day average volume
+  // are treated as high-conviction moves and count double.
+  const volWindow = volumes.slice(-30);
+  const weights = window.map((_, i) => {
+    const v = volWindow[i];
+    if (!(v > 0)) return 1;
+    const ref = volWindow.slice(Math.max(0, i - 20), i).filter((x) => x > 0);
+    const avg = ref.length ? ref.reduce((a, b) => a + b, 0) / ref.length : v;
+    return v > 2 * avg ? 2 : 1;
+  });
+  const highVolumeDays = weights.filter((w) => w > 1).length;
+  const { slope, intercept } = weightedRegression(window, weights);
 
   // Daily log-return volatility
   const rets: number[] = [];
@@ -346,7 +388,22 @@ function computeForecast(closes: number[]) {
   const lastPrice = window[n - 1];
   const rsiBias = Math.max(-1, Math.min(1, (rsi - 50) / 50));          // overbought>0, oversold<0
   const macdBias = Math.max(-1, Math.min(1, (macd.hist / (lastPrice || 1)) * 200)); // normalized histogram
-  const momentum = Math.max(-1, Math.min(1, 0.5 * rsiBias + 0.5 * macdBias)); // -1..1
+
+  // Bollinger (20-day, 2σ) mean-reversion: near the upper band leans down,
+  // near the lower band leans up. Counters trend-continuation at extremes.
+  const bbWin = closes.slice(-20);
+  const sma = bbWin.reduce((a, b) => a + b, 0) / bbWin.length;
+  const sd = Math.sqrt(bbWin.reduce((a, b) => a + (b - sma) ** 2, 0) / bbWin.length);
+  const upperBand = sma + 2 * sd;
+  const lowerBand = sma - 2 * sd;
+  const bbPosition = upperBand > lowerBand ? (lastPrice - lowerBand) / (upperBand - lowerBand) : 0.5;
+  const bbBias = Math.max(-1, Math.min(1, (bbPosition - 0.5) * -2));
+
+  const momentum = Math.max(-1, Math.min(1, 0.4 * rsiBias + 0.4 * macdBias + 0.4 * bbBias)); // -1..1
+
+  // Short vs long trend agreement (5-day vs 30-day direction).
+  const trend5 = closes.length >= 6 ? closes[closes.length - 1] - closes[closes.length - 6] : 0;
+  const trendsAgree = Math.sign(trend5) === Math.sign(slope) && slope !== 0;
 
   // Build 7 trading days, skipping weekends (NSE closed Sat/Sun).
   const out = [];
@@ -359,8 +416,9 @@ function computeForecast(closes: number[]) {
     if (NSE_HOLIDAYS.has(d.toISOString().slice(0, 10))) continue; // skip NSE holidays
     tradingDay++;
     const linPred = intercept + slope * (n - 1 + tradingDay);
-    // Base SES/LR forecast nudged by indicator momentum (max ~0.1%/day).
-    const forecast = (0.6 * linPred + 0.4 * s) * (1 + momentum * 0.001 * tradingDay);
+    const holtPred = level + trend * tradingDay;
+    // Holt/LR blend nudged by indicator momentum (max ~0.15%/day).
+    const forecast = (0.6 * linPred + 0.4 * holtPred) * (1 + momentum * 0.0015 * tradingDay);
     const band = forecast * sigma * Math.sqrt(tradingDay);
     out.push({
       date: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
@@ -373,14 +431,109 @@ function computeForecast(closes: number[]) {
   return {
     lastPrice,
     sigma,
+    trendsAgree,
     indicators: {
       rsi: Number(rsi.toFixed(1)),
       macd: Number(macd.macd.toFixed(2)),
       macdSignal: Number(macd.signal.toFixed(2)),
       momentum: Number(momentum.toFixed(3)),
+      bbPosition: Number(bbPosition.toFixed(2)),
+      bbUpper: Number(upperBand.toFixed(2)),
+      bbLower: Number(lowerBand.toFixed(2)),
+      highVolumeDays,
     },
     forecast: out,
   };
+}
+
+const volumesOf = (candles: any[]) => candles.map((c: any[]) => Number(c[5] ?? 0));
+
+/** Close-to-close NIFTY returns keyed by ISO date (for beta). */
+async function fetchNiftyDailyReturns(): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  try {
+    const candles = mapHistorical(await fetchChart("^NSEI", "3mo", "1d")) as any[];
+    for (let i = 1; i < candles.length; i++) {
+      const p = Number(candles[i - 1][4]), c = Number(candles[i][4]);
+      if (p > 0 && c > 0) out[String(candles[i][0]).slice(0, 10)] = c / p - 1;
+    }
+  } catch (e) {
+    console.error("NIFTY returns fetch failed:", e);
+  }
+  return out;
+}
+
+function computeBeta(candles: any[], nifty: Record<string, number>): number | null {
+  const xs: number[] = [], ys: number[] = [];
+  const recent = candles.slice(-31);
+  for (let i = 1; i < recent.length; i++) {
+    const m = nifty[String(recent[i][0]).slice(0, 10)];
+    const p = Number(recent[i - 1][4]), c = Number(recent[i][4]);
+    if (m == null || !(p > 0)) continue;
+    xs.push(m); ys.push(c / p - 1);
+  }
+  if (xs.length < 15) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  let cov = 0, vx = 0;
+  xs.forEach((x, i) => { cov += (x - mx) * (ys[i] - my); vx += (x - mx) ** 2; });
+  return vx > 0 ? cov / vx : null;
+}
+
+/** Share of recent days where the prior 5-day trend correctly called the next day's direction. */
+function directionalConsistency(closes: number[]): number {
+  const recent = closes.slice(-45);
+  let hit = 0, total = 0;
+  for (let i = 5; i < recent.length - 1; i++) {
+    const called = Math.sign(recent[i] - recent[i - 5]);
+    const actual = Math.sign(recent[i + 1] - recent[i]);
+    if (called === 0 || actual === 0) continue;
+    total++;
+    if (called === actual) hit++;
+  }
+  return total ? hit / total : 0.5;
+}
+
+// ---------------- Groq narrative layer (cached per day) ----------------
+const GROQ_API_BASE = "https://api.groq.com/openai/v1";
+async function groqJson(prompt: string): Promise<any | null> {
+  const key = Deno.env.get("GROQ_API_KEY");
+  if (!key) return null;
+  const model = Deno.env.get("GROQ_MODEL")?.trim() || "llama-3.3-70b-versatile";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const res = await fetch(`${GROQ_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.error("Groq narrative failed:", res.status, await res.text());
+      return null;
+    }
+    const body = await res.json();
+    return JSON.parse(body?.choices?.[0]?.message?.content ?? "{}");
+  } catch (e) {
+    console.error("Groq narrative error:", e);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function cachedNarrative(supabase: any, key: string, build: () => Promise<any | null>) {
+  const { data } = await supabase.from("ai_narrative").select("content").eq("cache_key", key).maybeSingle();
+  if (data?.content) return data.content;
+  const content = await build();
+  if (content) await supabase.from("ai_narrative").upsert({ cache_key: key, content });
+  return content;
 }
 
 function isoToCloseMap(candles: any[]): Record<string, number> {
