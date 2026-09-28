@@ -1200,14 +1200,23 @@ serve(async (req) => {
             const avgRangePct = ranges.length
               ? ranges.reduce((a, b) => a + b, 0) / ranges.length
               : volatilityPct;
-            // 0-100 risk score: swing size, intraday travel, and how often the
-            // day-trade has failed historically.
+            // 0-100 risk score built from less-correlated inputs:
+            //  - uncertainty: swing size relative to how strong the momentum signal is
+            //    (big swings with aligned RSI/MACD/Bollinger are directional, not random)
+            //  - beta to NIFTY: how much the stock amplifies market moves
+            //  - directional consistency: how often recent trend called the next day
+            //  - intraday failure rate
+            const momentumStrength = Math.abs(result.indicators.momentum); // 0..1
+            const uncertainty = volatilityPct / (0.5 + momentumStrength);
+            const beta = computeBeta(candles, niftyReturns);
+            const consistency = directionalConsistency(closes);
+            const betaRisk = beta == null ? 10 : Math.min(25, Math.max(0, Math.abs(beta)) * 12);
             const riskScore = Math.max(
               1,
               Math.min(
                 100,
                 Math.round(
-                  volatilityPct * 18 + avgRangePct * 8 + (1 - winRate) * 30,
+                  uncertainty * 14 + avgRangePct * 4 + betaRisk + (1 - consistency) * 25 + (1 - winRate) * 20,
                 ),
               ),
             );
@@ -1230,6 +1239,7 @@ serve(async (req) => {
                 risk_score: riskScore,
                 risk_label: riskLabel,
               },
+              sector: sectorOf(sym),
               // Prefer the strongest expected gain per unit of risk taken.
               score:
                 (expectedGainPct * winRate + avgDayGain * 0.5) /
@@ -1240,11 +1250,18 @@ serve(async (req) => {
             return null;
           }
         });
-        const picks = evaluated
-          .filter(Boolean)
-          .sort((a: any, b: any) => b.score - a.score)
+        // Sector cap: at most 3 stocks per sector in the 10-stock basket.
+        const perSector: Record<string, number> = {};
+        const picks = (evaluated.filter(Boolean) as any[])
+          .sort((a, b) => b.score - a.score)
+          .filter((p) => {
+            const n = perSector[p.sector] ?? 0;
+            if (n >= 3) return false;
+            perSector[p.sector] = n + 1;
+            return true;
+          })
           .slice(0, 10)
-          .map((p: any) => p.row);
+          .map((p) => p.row);
         if (picks.length) {
           await supabase.from("basket_prediction")
             .upsert(picks, { onConflict: "session_id,basket_date,symbol", ignoreDuplicates: true });
