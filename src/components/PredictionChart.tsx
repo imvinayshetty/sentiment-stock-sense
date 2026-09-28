@@ -24,6 +24,7 @@ const PredictionChart = ({ symbol, onCandleView }: PredictionChartProps) => {
   const { data: histData, isLoading } = useHistoricalData(symbol, range);
   const historicalData = histData ?? [];
   const { data: forecastData } = useForecast(symbol);
+  const { data: narrative } = useTechnicalNarrative(symbol);
 
   const rangePicker = (
     <select
