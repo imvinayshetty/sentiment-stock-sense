@@ -122,7 +122,7 @@ const BasketDayCompare = () => {
           <Columns2 className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold text-foreground">Compare Two Days Side by Side</h3>
         </div>
-        {days.length > 0 && (
+        {days.length >= 2 && (
           <div className="flex items-center gap-2">
             <select
               aria-label="First day to compare"
@@ -153,10 +153,9 @@ const BasketDayCompare = () => {
         )}
       </div>
 
-      {days.length === 0 ? (
+      {days.length < 2 ? (
         <p className="text-sm text-muted-foreground">
-          Once at least one day's basket has been logged, you can pick two dates here and see their
-          stocks, profits and risk scores next to each other.
+          At least two days of basket data are needed to compare. Check back tomorrow.
         </p>
       ) : (
         <>
