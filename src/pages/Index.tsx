@@ -38,6 +38,7 @@ const Index = () => {
     // Prefix-match so HoldingsSellPanel rows (each keyed by their own symbol) also refresh.
     queryClient.invalidateQueries({ queryKey: ["forecast"], refetchType: "active" });
     queryClient.invalidateQueries({ queryKey: ["basket-accuracy"], refetchType: "active" });
+    queryClient.invalidateQueries({ queryKey: ["intraday-breakeven"], refetchType: "active" });
   };
 
   return (
@@ -159,22 +160,22 @@ const Index = () => {
 
 
         {/* Basket history (collapsed by default) */}
-        <div className="animate-fade-in-up" style={{ animationDelay: "380ms" }}>
-          <CollapsibleSection title="Basket History" icon={<History className="h-5 w-5 text-primary" />}>
+        <div className="animate-fade-in-up" style={{ animationDelay: "450ms" }}>
+          <CollapsibleSection title="Basket History" hint="Past baskets, predicted vs actual" icon={<History className="h-5 w-5 text-primary" />}>
             <BasketHistory />
           </CollapsibleSection>
         </div>
 
         {/* Basket vs Market Comparison (collapsed by default) */}
-        <div className="animate-fade-in-up" style={{ animationDelay: "385ms" }}>
-          <CollapsibleSection title="Basket vs Market Comparison" icon={<Scale className="h-5 w-5 text-primary" />}>
+        <div className="animate-fade-in-up" style={{ animationDelay: "525ms" }}>
+          <CollapsibleSection title="Basket vs Market Comparison" hint="Each day's basket vs NIFTY" icon={<Scale className="h-5 w-5 text-primary" />}>
             <BasketComparison />
           </CollapsibleSection>
         </div>
 
         {/* Two-day side-by-side comparison (collapsed by default) */}
-        <div className="animate-fade-in-up" style={{ animationDelay: "390ms" }}>
-          <CollapsibleSection title="Compare Two Days Side by Side" icon={<Columns2 className="h-5 w-5 text-primary" />}>
+        <div className="animate-fade-in-up" style={{ animationDelay: "600ms" }}>
+          <CollapsibleSection title="Compare Two Days Side by Side" hint="Pick any two basket days" icon={<Columns2 className="h-5 w-5 text-primary" />}>
             <BasketDayCompare />
           </CollapsibleSection>
         </div>
@@ -183,8 +184,8 @@ const Index = () => {
 
 
         {/* Demo Trading (collapsed by default) */}
-        <div className="animate-fade-in-up" style={{ animationDelay: "400ms" }}>
-          <CollapsibleSection title="Demo Trading" icon={<Wallet className="h-5 w-5 text-primary" />}>
+        <div className="animate-fade-in-up" style={{ animationDelay: "675ms" }}>
+          <CollapsibleSection title="Demo Trading" hint="Paper trading with auto-buy & auto-exit" icon={<Wallet className="h-5 w-5 text-primary" />}>
             <DemoTrading />
           </CollapsibleSection>
         </div>
