@@ -38,6 +38,7 @@ const Index = () => {
     // Prefix-match so HoldingsSellPanel rows (each keyed by their own symbol) also refresh.
     queryClient.invalidateQueries({ queryKey: ["forecast"], refetchType: "active" });
     queryClient.invalidateQueries({ queryKey: ["basket-accuracy"], refetchType: "active" });
+    queryClient.invalidateQueries({ queryKey: ["intraday-breakeven"], refetchType: "active" });
   };
 
   return (

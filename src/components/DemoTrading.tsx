@@ -66,6 +66,10 @@ interface AutoBuyRule {
   stopLossPct?: number;
   /** Optional target, as a % above the fill price. */
   targetPct?: number;
+  /** Fixed stop-loss price (set when entered "By ₹"); takes priority over stopLossPct. */
+  stopLossPrice?: number;
+  /** Fixed target price (set when entered "By ₹"); takes priority over targetPct. */
+  targetPrice?: number;
   status: "active" | "filled" | "cancelled";
   createdAt: string;
   /** Fill details once triggered. */
@@ -693,6 +697,8 @@ const DemoTrading = () => {
     }
     let slPct: number | undefined;
     let tgtPct: number | undefined;
+    let slAbs: number | undefined;
+    let tgtAbs: number | undefined;
     if (stopLossValue.trim() !== "") {
       const v = Math.abs(Number(stopLossValue));
       if (!Number.isFinite(v) || v <= 0) {
@@ -700,6 +706,7 @@ const DemoTrading = () => {
         return;
       }
       slPct = stopLossMethod === "percentage" ? v : ((trigger - v) / trigger) * 100;
+      if (stopLossMethod !== "percentage") slAbs = v;
     }
     if (targetValue.trim() !== "") {
       const v = Math.abs(Number(targetValue));
@@ -708,6 +715,7 @@ const DemoTrading = () => {
         return;
       }
       tgtPct = targetMethod === "percentage" ? v : ((v - trigger) / trigger) * 100;
+      if (targetMethod !== "percentage") tgtAbs = v;
     }
     if ((slPct != null && !(slPct > 0 && slPct < 100)) || (tgtPct != null && !(tgtPct > 0))) {
       toast({
@@ -732,8 +740,10 @@ const DemoTrading = () => {
         name: liveSelected.name,
         triggerPrice: trigger,
         quantity: qty,
-        stopLossPct: slPct,
-        targetPct: tgtPct,
+        stopLossPct: slAbs != null ? undefined : slPct,
+        targetPct: tgtAbs != null ? undefined : tgtPct,
+        stopLossPrice: slAbs,
+        targetPrice: tgtAbs,
         status: "active" as const,
         createdAt: new Date().toISOString(),
       },
@@ -780,8 +790,14 @@ const DemoTrading = () => {
         });
         return;
       }
-      const slPrice = rule.stopLossPct != null ? price * (1 - rule.stopLossPct / 100) : undefined;
-      const tgtPrice = rule.targetPct != null ? price * (1 + rule.targetPct / 100) : undefined;
+      const slPrice =
+        rule.stopLossPrice != null
+          ? rule.stopLossPrice
+          : rule.stopLossPct != null ? price * (1 - rule.stopLossPct / 100) : undefined;
+      const tgtPrice =
+        rule.targetPrice != null
+          ? rule.targetPrice
+          : rule.targetPct != null ? price * (1 + rule.targetPct / 100) : undefined;
       pendingDebitRef.current += total; // lock the funds synchronously
       setBalance((b) => b - total);
       setTrades((t) =>
@@ -1198,7 +1214,7 @@ const DemoTrading = () => {
           <Zap className="h-4 w-4 text-primary" />
           <h3 className="text-xs font-semibold text-foreground">Auto-Buy Rules</h3>
           <span className="text-[11px] text-muted-foreground">
-            Pick “Auto Buy” in the price column above to set one up · fires once
+            Pick “Auto Buy” in the price column above to set one up · fires once · several rules for the same stock can all fill in one sharp drop
           </span>
           {activeRules.length > 0 && (
             <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
@@ -1226,10 +1242,14 @@ const DemoTrading = () => {
                   <span className="font-mono text-foreground">
                     {r.quantity} × ≤ ₹{r.triggerPrice.toFixed(2)}
                   </span>
-                  {r.stopLossPct != null && (
+                  {r.stopLossPrice != null ? (
+                    <span className="font-mono text-chart-down">SL ₹{r.stopLossPrice.toFixed(2)}</span>
+                  ) : r.stopLossPct != null && (
                     <span className="font-mono text-chart-down">SL {r.stopLossPct}%</span>
                   )}
-                  {r.targetPct != null && (
+                  {r.targetPrice != null ? (
+                    <span className="font-mono text-chart-up">Tgt ₹{r.targetPrice.toFixed(2)}</span>
+                  ) : r.targetPct != null && (
                     <span className="font-mono text-chart-up">Tgt {r.targetPct}%</span>
                   )}
                   {r.status === "active" && (
