@@ -499,7 +499,7 @@ const GROQ_API_BASE = "https://api.groq.com/openai/v1";
 async function groqJson(prompt: string): Promise<any | null> {
   const key = Deno.env.get("GROQ_API_KEY");
   if (!key) return null;
-  const model = Deno.env.get("GROQ_MODEL")?.trim() || "llama-3.3-70b-versatile";
+  const model = Deno.env.get("GROQ_MODEL")?.trim() || "openai/gpt-oss-20b";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25000);
   try {
