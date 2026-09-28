@@ -1137,15 +1137,27 @@ serve(async (req) => {
       const needsPick = market.status === "OPEN" && (existing ?? []).length === 0 && liveQuotes.size > 0;
 
       if (needsPick) {
+        const niftyReturns = await fetchNiftyDailyReturns();
+        // Cached Groq news sentiment, used as a hard bearish filter.
+        const { data: sentRows } = await supabase
+          .from("sentiment_cache").select("symbol,score").in("symbol", rawSymbols);
+        const sentimentBy = new Map<string, number>(
+          (sentRows ?? []).map((r: any) => [String(r.symbol).toUpperCase(), Number(r.score)]),
+        );
         // Study each candidate's recent day-trade behaviour (open -> close) and
         // only keep the ones a same-day trade has historically paid off on.
         const evaluated = await fetchInBatches(rawSymbols, 5, async (sym) => {
           try {
+            const sent = sentimentBy.get(sym);
+            if (sent != null && sent < 35) return null; // bearish news: excluded regardless of technicals
             const info = resolveSymbolInfo(sym);
             const chart = await fetchChart(info.yahooSymbol, "3mo", "1d");
             const candles = mapHistorical(chart);
             const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
-            const result = computeForecast(closes);
+            const result = computeForecast(closes, volumesOf(candles));
+            if (!result) return null;
+            // Momentum confirmation: 5-day and 30-day trends must agree.
+            if (!result.trendsAgree) return null;
             if (!result) return null;
             const liveQuote = liveQuotes.get(sym);
             if (!liveQuote) return null;
