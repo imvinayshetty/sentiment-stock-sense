@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_narrative: {
+        Row: {
+          cache_key: string
+          content: Json
+          created_at: string
+        }
+        Insert: {
+          cache_key: string
+          content: Json
+          created_at?: string
+        }
+        Update: {
+          cache_key?: string
+          content?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
       angel_session: {
         Row: {
           expires_at: string
