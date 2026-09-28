@@ -259,6 +259,9 @@ const BasketAccuracy = () => {
     }
   };
 
+  const rationaleKey = budgetMax == null ? "" : (data?.rows ?? []).map((r) => r.symbol).sort().join(",");
+  const { data: rationale } = useBasketRationale(getBasketSessionId(), data?.basketDate, rationaleKey);
+
   if (budgetMax == null) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 card-glow">
@@ -279,8 +282,6 @@ const BasketAccuracy = () => {
 
   const rows = data?.rows ?? [];
   const history = data?.history ?? [];
-  const rationaleKey = (data?.rows ?? []).map((r) => r.symbol).sort().join(",");
-  const { data: rationale } = useBasketRationale(getBasketSessionId(), data?.basketDate, rationaleKey);
 
 
   return (
