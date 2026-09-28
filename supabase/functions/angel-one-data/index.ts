@@ -1634,6 +1634,81 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "narrative" && symbol) {
+      if (!isValidSymbol(symbol)) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid symbol format" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const supabase = getSupabase();
+      const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+      const content = await cachedNarrative(supabase, `tech:${symbol}:${today}`, async () => {
+        const info = resolveSymbolInfo(symbol);
+        const candles = mapHistorical(await fetchChart(info.yahooSymbol, "3mo", "1d"));
+        const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
+        const f = computeForecast(closes, volumesOf(candles));
+        if (!f) return null;
+        const day7 = f.forecast[f.forecast.length - 1];
+        const chg = ((day7.forecast - f.lastPrice) / f.lastPrice) * 100;
+        const i = f.indicators;
+        const prompt = `You are a market technician. Write a 2-sentence plain-English summary of the technical picture for ${info.name} (NSE). Not investment advice, no buy/sell calls. Data: price ₹${f.lastPrice.toFixed(2)}, RSI ${i.rsi}, MACD ${i.macd} vs signal ${i.macdSignal}, Bollinger position ${i.bbPosition} (0=lower band, 1=upper band), bands ₹${i.bbLower}-₹${i.bbUpper}, high-volume days in last 30: ${i.highVolumeDays}, 5d and 30d trends ${f.trendsAgree ? "agree" : "disagree"}, 7-day model forecast ${chg.toFixed(2)}%. Return JSON: {"summary":"..."}`;
+        const out = await groqJson(prompt);
+        return typeof out?.summary === "string" ? { summary: out.summary } : null;
+      });
+      return new Response(JSON.stringify({ success: true, summary: content?.summary ?? null }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "basket-rationale") {
+      const session = url.searchParams.get("session") ?? "";
+      const date = url.searchParams.get("date") ?? "";
+      if (!session || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return new Response(JSON.stringify({ success: true, rationale: null, stocks: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const supabase = getSupabase();
+      const { data: rows } = await supabase.from("basket_prediction")
+        .select("symbol,base_price,predicted_close,risk_score").eq("session_id", session).eq("basket_date", date);
+      const list = rows ?? [];
+      if (!list.length) {
+        return new Response(JSON.stringify({ success: true, rationale: null, stocks: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const symbolsKey = list.map((r: any) => r.symbol).sort().join(",");
+      const content = await cachedNarrative(supabase, `basket:${date}:${symbolsKey}`, async () => {
+        const { data: sentRows } = await supabase.from("sentiment_cache")
+          .select("symbol,score,label").in("symbol", list.map((r: any) => r.symbol));
+        const sent = new Map((sentRows ?? []).map((s: any) => [s.symbol, s]));
+        const facts = await fetchInBatches(list, 5, async (r: any) => {
+          try {
+            const candles = mapHistorical(await fetchChart(resolveSymbolInfo(r.symbol).yahooSymbol, "3mo", "1d"));
+            const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
+            const f = computeForecast(closes, volumesOf(candles));
+            const s: any = sent.get(r.symbol);
+            const exp = ((Number(r.predicted_close) - Number(r.base_price)) / Number(r.base_price)) * 100;
+            return `${r.symbol} (${sectorOf(r.symbol)}): expected ${exp.toFixed(2)}% today, risk ${r.risk_score}/100, RSI ${f?.indicators.rsi ?? "?"}, MACD ${f ? (f.indicators.macd >= f.indicators.macdSignal ? "bullish" : "bearish") : "?"}, Bollinger pos ${f?.indicators.bbPosition ?? "?"}, news sentiment ${s ? `${s.score} (${s.label})` : "unknown"}`;
+          } catch {
+            return `${r.symbol}: data unavailable`;
+          }
+        });
+        const prompt = `You are an equity analyst. These NSE stocks were chosen for today's intraday basket by a quantitative model (positive same-day forecast, ≥50% intraday win rate, 5d/30d trend agreement, bearish-news filter, max 3 per sector). Explain in one short paragraph why this mix was chosen and the key risks for the day. Then, for each stock, give a one-sentence intraday long risk/reward note combining its technicals and news. Not investment advice. Return JSON: {"rationale":"...","stocks":[{"symbol":"...","note":"...","stance":"favourable|mixed|unfavourable"}]}\n\n${facts.filter(Boolean).join("\n")}`;
+        const out = await groqJson(prompt);
+        if (typeof out?.rationale !== "string") return null;
+        return {
+          rationale: out.rationale,
+          stocks: Array.isArray(out.stocks)
+            ? out.stocks.filter((s: any) => typeof s?.symbol === "string" && typeof s?.note === "string")
+            : [],
+        };
+      });
+      return new Response(JSON.stringify({ success: true, rationale: content?.rationale ?? null, stocks: content?.stocks ?? [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "symbols") {
 
       const symbols = Object.entries(STOCK_TOKENS).map(([stockSymbol, info]) => ({
