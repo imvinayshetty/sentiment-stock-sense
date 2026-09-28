@@ -986,7 +986,7 @@ serve(async (req) => {
       const chart = await fetchChart(stockInfo.yahooSymbol, "3mo", "1d");
       const candles = mapHistorical(chart);
       const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
-      const result = computeForecast(closes);
+      const result = computeForecast(closes, volumesOf(candles));
       if (!result) {
         return new Response(JSON.stringify({ success: false, error: "Not enough data" }), {
           status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1458,7 +1458,11 @@ serve(async (req) => {
           const chart = await fetchChart(info.yahooSymbol, "3mo", "1d");
           const candles = mapHistorical(chart);
           const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
-          const forecastResult = computeForecast(closes);
+          const forecastResult = computeForecast(closes, volumesOf(candles));
+          const dayMoves = candles.slice(-40)
+            .map((c: any[]) => (Number(c[1]) > 0 ? Number(c[4]) - Number(c[1]) : null))
+            .filter((v): v is number => v != null);
+          const winRate = dayMoves.length ? dayMoves.filter((v) => v > 0).length / dayMoves.length : 0.5;
           if (!forecastResult) return null;
 
           const live = liveQuotes.get(sym);
@@ -1504,6 +1508,9 @@ serve(async (req) => {
             totalCharges: 0,
             projectedProfit: 0,
             weightPct: 0,
+            sector: sectorOf(sym),
+            winRate: Number(winRate.toFixed(2)),
+            kellyPct: 0,
             // Internal only: stripped before responding.
             _token: token,
             _chargePerShare: breakevenPerShare,
@@ -1520,22 +1527,41 @@ serve(async (req) => {
         .filter((r) => r.profitable)
         .sort((a, b) => b.netPerShare / Math.max(1, b.marginPerShare) - a.netPerShare / Math.max(1, a.marginPerShare));
 
-      // Greedy diversified allocation: walk the ROI ranking, buy as many shares as
-      // the remaining budget allows, but cap any single stock at 40% of the budget
-      // so at least three names share the portfolio. A second pass hands leftover
-      // budget (from caps and floor() rounding) back to the same ranking.
-      const MAX_WEIGHT_PER_STOCK = 0.4;
+      // Half-Kelly position cap per stock: f = p − (1 − p) / odds, where odds =
+      // expected gain ÷ breakeven cost. Clamped to 10–40% of budget so a single
+      // name never dominates and every profitable name can get a slice.
+      for (const r of profitable) {
+        const odds = r.expectedGain / Math.max(0.0001, r._chargePerShare);
+        const kelly = r.winRate - (1 - r.winRate) / Math.max(0.01, odds);
+        r.kellyPct = Number((Math.max(0.1, Math.min(0.4, kelly / 2)) * 100).toFixed(1));
+      }
+
+      // Greedy allocation with a sector-correlation penalty: before each pick,
+      // effective ROI = roi × (1 − 0.3 × share of budget already in that sector),
+      // then walk the re-ranked list. A second pass redistributes leftovers.
       let remaining = budget;
       if (profitable.length) {
-        const cap = budget * MAX_WEIGHT_PER_STOCK;
+        const sectorSpend: Record<string, number> = {};
         for (let pass = 0; pass < 2; pass++) {
-          for (const r of profitable) {
-            const perShare = Math.max(1, r.marginPerShare);
-            const room = Math.min(remaining, cap - r.shares * perShare);
+          const pending = new Set(profitable);
+          while (pending.size) {
+            let best: (typeof profitable)[number] | null = null;
+            let bestRoi = -Infinity;
+            for (const r of pending) {
+              const exposure = (sectorSpend[r.sector] ?? 0) / budget;
+              const eff = (r.netPerShare / Math.max(1, r.marginPerShare)) * (1 - 0.3 * exposure);
+              if (eff > bestRoi) { bestRoi = eff; best = r; }
+            }
+            if (!best) break;
+            pending.delete(best);
+            const perShare = Math.max(1, best.marginPerShare);
+            const cap = budget * (best.kellyPct / 100);
+            const room = Math.min(remaining, cap - best.shares * perShare);
             const extra = Math.floor(room / perShare);
             if (extra < 1) continue;
-            r.shares += extra;
+            best.shares += extra;
             remaining -= extra * perShare;
+            sectorSpend[best.sector] = (sectorSpend[best.sector] ?? 0) + extra * perShare;
           }
           if (remaining < 1) break;
         }
