@@ -172,6 +172,10 @@ export interface ForecastIndicators {
   macd: number;
   macdSignal: number;
   momentum: number;
+  bbPosition?: number;
+  bbUpper?: number;
+  bbLower?: number;
+  highVolumeDays?: number;
 }
 export interface ForecastPayload {
   lastPrice: number;
@@ -192,6 +196,39 @@ export function useForecast(symbol: string) {
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
+  });
+}
+
+// ---------- AI narratives (Groq, cached per day on the server) ----------
+export function useTechnicalNarrative(symbol: string) {
+  return useQuery<string | null>({
+    queryKey: ["narrative", symbol],
+    queryFn: async () => {
+      const result = await callFunction("angel-one-data", { action: "narrative", symbol });
+      return result.success ? (result.summary ?? null) : null;
+    },
+    enabled: !!symbol,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 0,
+  });
+}
+
+export interface BasketRationale {
+  rationale: string | null;
+  stocks: { symbol: string; note: string; stance?: string }[];
+}
+export function useBasketRationale(session: string, date: string | undefined, symbolsKey: string) {
+  return useQuery<BasketRationale>({
+    queryKey: ["basket-rationale", date, symbolsKey],
+    queryFn: async () => {
+      const result = await callFunction("angel-one-data", { action: "basket-rationale", session, date: date ?? "" });
+      return { rationale: result.rationale ?? null, stocks: result.stocks ?? [] };
+    },
+    enabled: !!date && !!symbolsKey,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 0,
   });
 }
 

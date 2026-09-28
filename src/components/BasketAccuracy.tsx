@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useDailyBasket, useBasketAccuracy, resetBasket, type BasketRow } from "@/hooks/useDailyBasket";
+import { useDailyBasket, useBasketAccuracy, resetBasket, getBasketSessionId, type BasketRow } from "@/hooks/useDailyBasket";
+import { useBasketRationale } from "@/hooks/useAngelOneData";
 import { useIntradayBreakeven, type BreakevenRow } from "@/hooks/useIntradayBreakeven";
 import type { StockQuote } from "@/lib/stockData";
 
@@ -258,6 +259,9 @@ const BasketAccuracy = () => {
     }
   };
 
+  const rationaleKey = budgetMax == null ? "" : (data?.rows ?? []).map((r) => r.symbol).sort().join(",");
+  const { data: rationale } = useBasketRationale(getBasketSessionId(), data?.basketDate, rationaleKey);
+
   if (budgetMax == null) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 card-glow">
@@ -312,6 +316,30 @@ const BasketAccuracy = () => {
           )}
         </div>
       </div>
+
+      {rationale?.rationale && (
+        <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+          <div className="mb-1 font-semibold text-primary">Why these stocks (AI summary)</div>
+          <p>{rationale.rationale}</p>
+          {rationale.stocks.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {rationale.stocks.map((s) => (
+                <li key={s.symbol}>
+                  <span
+                    className={`font-mono font-semibold ${
+                      s.stance === "favourable" ? "text-chart-up" : s.stance === "unfavourable" ? "text-chart-down" : "text-chart-neutral"
+                    }`}
+                  >
+                    {s.symbol}
+                  </span>{" "}
+                  — {s.note}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-[10px] opacity-70">Generated once per day. Not investment advice.</p>
+        </div>
+      )}
 
       {isLoading && rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">Recording today's basket…</p>

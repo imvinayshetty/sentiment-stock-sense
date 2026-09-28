@@ -318,21 +318,63 @@ const NSE_HOLIDAYS = new Set<string>([
   "2027-08-26", "2027-10-02", "2027-10-29", "2027-11-17", "2027-12-25",
 ]);
 
-function computeForecast(closes: number[]) {
+// Sector map used for basket diversification and allocation penalties.
+const SECTOR: Record<string, string> = {
+  TCS: "IT", INFY: "IT", WIPRO: "IT", HCLTECH: "IT", TECHM: "IT",
+  HDFCBANK: "BANK", ICICIBANK: "BANK", SBIN: "BANK", KOTAKBANK: "BANK", AXISBANK: "BANK", INDUSINDBK: "BANK",
+  BAJFINANCE: "FIN", BAJAJFINSV: "FIN",
+  SUNPHARMA: "PHARMA", DRREDDY: "PHARMA", CIPLA: "PHARMA", DIVISLAB: "PHARMA", APOLLOHOSP: "PHARMA",
+  TATAMOTORS: "AUTO", MARUTI: "AUTO", EICHERMOT: "AUTO", HEROMOTOCO: "AUTO", M_M: "AUTO",
+  ITC: "FMCG", HINDUNILVR: "FMCG", NESTLEIND: "FMCG", BRITANNIA: "FMCG", TATACONSUM: "FMCG", ASIANPAINT: "FMCG", TITAN: "FMCG",
+  JSWSTEEL: "METAL", TATASTEEL: "METAL", HINDALCO: "METAL", COALINDIA: "METAL",
+  RELIANCE: "ENERGY", ONGC: "ENERGY", BPCL: "ENERGY", POWERGRID: "ENERGY", NTPC: "ENERGY",
+  LT: "INFRA", ULTRACEMCO: "INFRA", GRASIM: "INFRA", ADANIPORTS: "INFRA",
+  BHARTIARTL: "TELECOM", UPL: "CHEM",
+};
+const sectorOf = (sym: string) => SECTOR[sym] ?? "OTHER";
+
+/** Weighted least squares on index -> value. */
+function weightedRegression(values: number[], weights: number[]) {
+  let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  values.forEach((y, x) => {
+    const w = weights[x] ?? 1;
+    sw += w; sx += w * x; sy += w * y; sxx += w * x * x; sxy += w * x * y;
+  });
+  const denom = sw * sxx - sx * sx;
+  const slope = denom !== 0 ? (sw * sxy - sx * sy) / denom : 0;
+  const intercept = (sy - slope * sx) / (sw || 1);
+  return { slope, intercept };
+}
+
+function computeForecast(closes: number[], volumes: number[] = []) {
   if (closes.length < 5) return null;
   const window = closes.slice(-30);
   const n = window.length;
 
-  // Simple Exponential Smoothing.
-  // α=0.3 chosen for stability over the 30-day window (~5-day effective memory).
-  // Higher α (0.4–0.5) adapts faster and suits very volatile names, but is noisier;
-  // 0.3 is a deliberate stability-over-reactivity trade-off for the blended model.
-  const SES_ALPHA = 0.3;
-  let s = window[0];
-  for (const c of window) s = SES_ALPHA * c + (1 - SES_ALPHA) * s;
+  // Holt's double exponential smoothing: level and trend update separately,
+  // so the forecast reacts to trend changes without the noise of a high α.
+  const ALPHA = 0.3;
+  const BETA = 0.1;
+  let level = window[0];
+  let trend = n > 1 ? window[1] - window[0] : 0;
+  for (let i = 1; i < n; i++) {
+    const prevLevel = level;
+    level = ALPHA * window[i] + (1 - ALPHA) * (level + trend);
+    trend = BETA * (level - prevLevel) + (1 - BETA) * trend;
+  }
 
-  // Linear regression trend
-  const { slope, intercept } = linearRegression(window);
+  // Volume-weighted linear regression: days on >2x the 20-day average volume
+  // are treated as high-conviction moves and count double.
+  const volWindow = volumes.slice(-30);
+  const weights = window.map((_, i) => {
+    const v = volWindow[i];
+    if (!(v > 0)) return 1;
+    const ref = volWindow.slice(Math.max(0, i - 20), i).filter((x) => x > 0);
+    const avg = ref.length ? ref.reduce((a, b) => a + b, 0) / ref.length : v;
+    return v > 2 * avg ? 2 : 1;
+  });
+  const highVolumeDays = weights.filter((w) => w > 1).length;
+  const { slope, intercept } = weightedRegression(window, weights);
 
   // Daily log-return volatility
   const rets: number[] = [];
@@ -346,7 +388,22 @@ function computeForecast(closes: number[]) {
   const lastPrice = window[n - 1];
   const rsiBias = Math.max(-1, Math.min(1, (rsi - 50) / 50));          // overbought>0, oversold<0
   const macdBias = Math.max(-1, Math.min(1, (macd.hist / (lastPrice || 1)) * 200)); // normalized histogram
-  const momentum = Math.max(-1, Math.min(1, 0.5 * rsiBias + 0.5 * macdBias)); // -1..1
+
+  // Bollinger (20-day, 2σ) mean-reversion: near the upper band leans down,
+  // near the lower band leans up. Counters trend-continuation at extremes.
+  const bbWin = closes.slice(-20);
+  const sma = bbWin.reduce((a, b) => a + b, 0) / bbWin.length;
+  const sd = Math.sqrt(bbWin.reduce((a, b) => a + (b - sma) ** 2, 0) / bbWin.length);
+  const upperBand = sma + 2 * sd;
+  const lowerBand = sma - 2 * sd;
+  const bbPosition = upperBand > lowerBand ? (lastPrice - lowerBand) / (upperBand - lowerBand) : 0.5;
+  const bbBias = Math.max(-1, Math.min(1, (bbPosition - 0.5) * -2));
+
+  const momentum = Math.max(-1, Math.min(1, 0.4 * rsiBias + 0.4 * macdBias + 0.4 * bbBias)); // -1..1
+
+  // Short vs long trend agreement (5-day vs 30-day direction).
+  const trend5 = closes.length >= 6 ? closes[closes.length - 1] - closes[closes.length - 6] : 0;
+  const trendsAgree = Math.sign(trend5) === Math.sign(slope) && slope !== 0;
 
   // Build 7 trading days, skipping weekends (NSE closed Sat/Sun).
   const out = [];
@@ -359,8 +416,9 @@ function computeForecast(closes: number[]) {
     if (NSE_HOLIDAYS.has(d.toISOString().slice(0, 10))) continue; // skip NSE holidays
     tradingDay++;
     const linPred = intercept + slope * (n - 1 + tradingDay);
-    // Base SES/LR forecast nudged by indicator momentum (max ~0.1%/day).
-    const forecast = (0.6 * linPred + 0.4 * s) * (1 + momentum * 0.001 * tradingDay);
+    const holtPred = level + trend * tradingDay;
+    // Holt/LR blend nudged by indicator momentum (max ~0.15%/day).
+    const forecast = (0.6 * linPred + 0.4 * holtPred) * (1 + momentum * 0.0015 * tradingDay);
     const band = forecast * sigma * Math.sqrt(tradingDay);
     out.push({
       date: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
@@ -373,14 +431,109 @@ function computeForecast(closes: number[]) {
   return {
     lastPrice,
     sigma,
+    trendsAgree,
     indicators: {
       rsi: Number(rsi.toFixed(1)),
       macd: Number(macd.macd.toFixed(2)),
       macdSignal: Number(macd.signal.toFixed(2)),
       momentum: Number(momentum.toFixed(3)),
+      bbPosition: Number(bbPosition.toFixed(2)),
+      bbUpper: Number(upperBand.toFixed(2)),
+      bbLower: Number(lowerBand.toFixed(2)),
+      highVolumeDays,
     },
     forecast: out,
   };
+}
+
+const volumesOf = (candles: any[]) => candles.map((c: any[]) => Number(c[5] ?? 0));
+
+/** Close-to-close NIFTY returns keyed by ISO date (for beta). */
+async function fetchNiftyDailyReturns(): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  try {
+    const candles = mapHistorical(await fetchChart("^NSEI", "3mo", "1d")) as any[];
+    for (let i = 1; i < candles.length; i++) {
+      const p = Number(candles[i - 1][4]), c = Number(candles[i][4]);
+      if (p > 0 && c > 0) out[String(candles[i][0]).slice(0, 10)] = c / p - 1;
+    }
+  } catch (e) {
+    console.error("NIFTY returns fetch failed:", e);
+  }
+  return out;
+}
+
+function computeBeta(candles: any[], nifty: Record<string, number>): number | null {
+  const xs: number[] = [], ys: number[] = [];
+  const recent = candles.slice(-31);
+  for (let i = 1; i < recent.length; i++) {
+    const m = nifty[String(recent[i][0]).slice(0, 10)];
+    const p = Number(recent[i - 1][4]), c = Number(recent[i][4]);
+    if (m == null || !(p > 0)) continue;
+    xs.push(m); ys.push(c / p - 1);
+  }
+  if (xs.length < 15) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  let cov = 0, vx = 0;
+  xs.forEach((x, i) => { cov += (x - mx) * (ys[i] - my); vx += (x - mx) ** 2; });
+  return vx > 0 ? cov / vx : null;
+}
+
+/** Share of recent days where the prior 5-day trend correctly called the next day's direction. */
+function directionalConsistency(closes: number[]): number {
+  const recent = closes.slice(-45);
+  let hit = 0, total = 0;
+  for (let i = 5; i < recent.length - 1; i++) {
+    const called = Math.sign(recent[i] - recent[i - 5]);
+    const actual = Math.sign(recent[i + 1] - recent[i]);
+    if (called === 0 || actual === 0) continue;
+    total++;
+    if (called === actual) hit++;
+  }
+  return total ? hit / total : 0.5;
+}
+
+// ---------------- Groq narrative layer (cached per day) ----------------
+const GROQ_API_BASE = "https://api.groq.com/openai/v1";
+async function groqJson(prompt: string): Promise<any | null> {
+  const key = Deno.env.get("GROQ_API_KEY");
+  if (!key) return null;
+  const model = Deno.env.get("GROQ_MODEL")?.trim() || "openai/gpt-oss-20b";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const res = await fetch(`${GROQ_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.error("Groq narrative failed:", res.status, await res.text());
+      return null;
+    }
+    const body = await res.json();
+    return JSON.parse(body?.choices?.[0]?.message?.content ?? "{}");
+  } catch (e) {
+    console.error("Groq narrative error:", e);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function cachedNarrative(supabase: any, key: string, build: () => Promise<any | null>) {
+  const { data } = await supabase.from("ai_narrative").select("content").eq("cache_key", key).maybeSingle();
+  if (data?.content) return data.content;
+  const content = await build();
+  if (content) await supabase.from("ai_narrative").upsert({ cache_key: key, content });
+  return content;
 }
 
 function isoToCloseMap(candles: any[]): Record<string, number> {
@@ -833,7 +986,7 @@ serve(async (req) => {
       const chart = await fetchChart(stockInfo.yahooSymbol, "3mo", "1d");
       const candles = mapHistorical(chart);
       const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
-      const result = computeForecast(closes);
+      const result = computeForecast(closes, volumesOf(candles));
       if (!result) {
         return new Response(JSON.stringify({ success: false, error: "Not enough data" }), {
           status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -984,15 +1137,27 @@ serve(async (req) => {
       const needsPick = market.status === "OPEN" && (existing ?? []).length === 0 && liveQuotes.size > 0;
 
       if (needsPick) {
+        const niftyReturns = await fetchNiftyDailyReturns();
+        // Cached Groq news sentiment, used as a hard bearish filter.
+        const { data: sentRows } = await supabase
+          .from("sentiment_cache").select("symbol,score").in("symbol", rawSymbols);
+        const sentimentBy = new Map<string, number>(
+          (sentRows ?? []).map((r: any) => [String(r.symbol).toUpperCase(), Number(r.score)]),
+        );
         // Study each candidate's recent day-trade behaviour (open -> close) and
         // only keep the ones a same-day trade has historically paid off on.
         const evaluated = await fetchInBatches(rawSymbols, 5, async (sym) => {
           try {
+            const sent = sentimentBy.get(sym);
+            if (sent != null && sent < 35) return null; // bearish news: excluded regardless of technicals
             const info = resolveSymbolInfo(sym);
             const chart = await fetchChart(info.yahooSymbol, "3mo", "1d");
             const candles = mapHistorical(chart);
             const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
-            const result = computeForecast(closes);
+            const result = computeForecast(closes, volumesOf(candles));
+            if (!result) return null;
+            // Momentum confirmation: 5-day and 30-day trends must agree.
+            if (!result.trendsAgree) return null;
             if (!result) return null;
             const liveQuote = liveQuotes.get(sym);
             if (!liveQuote) return null;
@@ -1035,14 +1200,23 @@ serve(async (req) => {
             const avgRangePct = ranges.length
               ? ranges.reduce((a, b) => a + b, 0) / ranges.length
               : volatilityPct;
-            // 0-100 risk score: swing size, intraday travel, and how often the
-            // day-trade has failed historically.
+            // 0-100 risk score built from less-correlated inputs:
+            //  - uncertainty: swing size relative to how strong the momentum signal is
+            //    (big swings with aligned RSI/MACD/Bollinger are directional, not random)
+            //  - beta to NIFTY: how much the stock amplifies market moves
+            //  - directional consistency: how often recent trend called the next day
+            //  - intraday failure rate
+            const momentumStrength = Math.abs(result.indicators.momentum); // 0..1
+            const uncertainty = volatilityPct / (0.5 + momentumStrength);
+            const beta = computeBeta(candles, niftyReturns);
+            const consistency = directionalConsistency(closes);
+            const betaRisk = beta == null ? 10 : Math.min(25, Math.max(0, Math.abs(beta)) * 12);
             const riskScore = Math.max(
               1,
               Math.min(
                 100,
                 Math.round(
-                  volatilityPct * 18 + avgRangePct * 8 + (1 - winRate) * 30,
+                  uncertainty * 14 + avgRangePct * 4 + betaRisk + (1 - consistency) * 25 + (1 - winRate) * 20,
                 ),
               ),
             );
@@ -1065,6 +1239,7 @@ serve(async (req) => {
                 risk_score: riskScore,
                 risk_label: riskLabel,
               },
+              sector: sectorOf(sym),
               // Prefer the strongest expected gain per unit of risk taken.
               score:
                 (expectedGainPct * winRate + avgDayGain * 0.5) /
@@ -1075,11 +1250,18 @@ serve(async (req) => {
             return null;
           }
         });
-        const picks = evaluated
-          .filter(Boolean)
-          .sort((a: any, b: any) => b.score - a.score)
+        // Sector cap: at most 3 stocks per sector in the 10-stock basket.
+        const perSector: Record<string, number> = {};
+        const picks = (evaluated.filter(Boolean) as any[])
+          .sort((a, b) => b.score - a.score)
+          .filter((p) => {
+            const n = perSector[p.sector] ?? 0;
+            if (n >= 3) return false;
+            perSector[p.sector] = n + 1;
+            return true;
+          })
           .slice(0, 10)
-          .map((p: any) => p.row);
+          .map((p) => p.row);
         if (picks.length) {
           await supabase.from("basket_prediction")
             .upsert(picks, { onConflict: "session_id,basket_date,symbol", ignoreDuplicates: true });
@@ -1305,7 +1487,11 @@ serve(async (req) => {
           const chart = await fetchChart(info.yahooSymbol, "3mo", "1d");
           const candles = mapHistorical(chart);
           const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
-          const forecastResult = computeForecast(closes);
+          const forecastResult = computeForecast(closes, volumesOf(candles));
+          const dayMoves = candles.slice(-40)
+            .map((c: any[]) => (Number(c[1]) > 0 ? Number(c[4]) - Number(c[1]) : null))
+            .filter((v): v is number => v != null);
+          const winRate = dayMoves.length ? dayMoves.filter((v) => v > 0).length / dayMoves.length : 0.5;
           if (!forecastResult) return null;
 
           const live = liveQuotes.get(sym);
@@ -1351,6 +1537,9 @@ serve(async (req) => {
             totalCharges: 0,
             projectedProfit: 0,
             weightPct: 0,
+            sector: sectorOf(sym),
+            winRate: Number(winRate.toFixed(2)),
+            kellyPct: 0,
             // Internal only: stripped before responding.
             _token: token,
             _chargePerShare: breakevenPerShare,
@@ -1367,22 +1556,41 @@ serve(async (req) => {
         .filter((r) => r.profitable)
         .sort((a, b) => b.netPerShare / Math.max(1, b.marginPerShare) - a.netPerShare / Math.max(1, a.marginPerShare));
 
-      // Greedy diversified allocation: walk the ROI ranking, buy as many shares as
-      // the remaining budget allows, but cap any single stock at 40% of the budget
-      // so at least three names share the portfolio. A second pass hands leftover
-      // budget (from caps and floor() rounding) back to the same ranking.
-      const MAX_WEIGHT_PER_STOCK = 0.4;
+      // Half-Kelly position cap per stock: f = p − (1 − p) / odds, where odds =
+      // expected gain ÷ breakeven cost. Clamped to 10–40% of budget so a single
+      // name never dominates and every profitable name can get a slice.
+      for (const r of profitable) {
+        const odds = r.expectedGain / Math.max(0.0001, r._chargePerShare);
+        const kelly = r.winRate - (1 - r.winRate) / Math.max(0.01, odds);
+        r.kellyPct = Number((Math.max(0.1, Math.min(0.4, kelly / 2)) * 100).toFixed(1));
+      }
+
+      // Greedy allocation with a sector-correlation penalty: before each pick,
+      // effective ROI = roi × (1 − 0.3 × share of budget already in that sector),
+      // then walk the re-ranked list. A second pass redistributes leftovers.
       let remaining = budget;
       if (profitable.length) {
-        const cap = budget * MAX_WEIGHT_PER_STOCK;
+        const sectorSpend: Record<string, number> = {};
         for (let pass = 0; pass < 2; pass++) {
-          for (const r of profitable) {
-            const perShare = Math.max(1, r.marginPerShare);
-            const room = Math.min(remaining, cap - r.shares * perShare);
+          const pending = new Set(profitable);
+          while (pending.size) {
+            let best: (typeof profitable)[number] | null = null;
+            let bestRoi = -Infinity;
+            for (const r of pending) {
+              const exposure = (sectorSpend[r.sector] ?? 0) / budget;
+              const eff = (r.netPerShare / Math.max(1, r.marginPerShare)) * (1 - 0.3 * exposure);
+              if (eff > bestRoi) { bestRoi = eff; best = r; }
+            }
+            if (!best) break;
+            pending.delete(best);
+            const perShare = Math.max(1, best.marginPerShare);
+            const cap = budget * (best.kellyPct / 100);
+            const room = Math.min(remaining, cap - best.shares * perShare);
             const extra = Math.floor(room / perShare);
             if (extra < 1) continue;
-            r.shares += extra;
+            best.shares += extra;
             remaining -= extra * perShare;
+            sectorSpend[best.sector] = (sectorSpend[best.sector] ?? 0) + extra * perShare;
           }
           if (remaining < 1) break;
         }
@@ -1424,6 +1632,81 @@ serve(async (req) => {
         totalMargin,
         budgetUtilisation: Number(((totalMargin / budget) * 100).toFixed(1)),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (action === "narrative" && symbol) {
+      if (!isValidSymbol(symbol)) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid symbol format" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const supabase = getSupabase();
+      const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+      const content = await cachedNarrative(supabase, `tech:${symbol}:${today}`, async () => {
+        const info = resolveSymbolInfo(symbol);
+        const candles = mapHistorical(await fetchChart(info.yahooSymbol, "3mo", "1d"));
+        const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
+        const f = computeForecast(closes, volumesOf(candles));
+        if (!f) return null;
+        const day7 = f.forecast[f.forecast.length - 1];
+        const chg = ((day7.forecast - f.lastPrice) / f.lastPrice) * 100;
+        const i = f.indicators;
+        const prompt = `You are a market technician. Write a 2-sentence plain-English summary of the technical picture for ${info.name} (NSE). Not investment advice, no buy/sell calls. Data: price ₹${f.lastPrice.toFixed(2)}, RSI ${i.rsi}, MACD ${i.macd} vs signal ${i.macdSignal}, Bollinger position ${i.bbPosition} (0=lower band, 1=upper band), bands ₹${i.bbLower}-₹${i.bbUpper}, high-volume days in last 30: ${i.highVolumeDays}, 5d and 30d trends ${f.trendsAgree ? "agree" : "disagree"}, 7-day model forecast ${chg.toFixed(2)}%. Return JSON: {"summary":"..."}`;
+        const out = await groqJson(prompt);
+        return typeof out?.summary === "string" ? { summary: out.summary } : null;
+      });
+      return new Response(JSON.stringify({ success: true, summary: content?.summary ?? null }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "basket-rationale") {
+      const session = url.searchParams.get("session") ?? "";
+      const date = url.searchParams.get("date") ?? "";
+      if (!session || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return new Response(JSON.stringify({ success: true, rationale: null, stocks: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const supabase = getSupabase();
+      const { data: rows } = await supabase.from("basket_prediction")
+        .select("symbol,base_price,predicted_close,risk_score").eq("session_id", session).eq("basket_date", date);
+      const list = rows ?? [];
+      if (!list.length) {
+        return new Response(JSON.stringify({ success: true, rationale: null, stocks: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const symbolsKey = list.map((r: any) => r.symbol).sort().join(",");
+      const content = await cachedNarrative(supabase, `basket:${date}:${symbolsKey}`, async () => {
+        const { data: sentRows } = await supabase.from("sentiment_cache")
+          .select("symbol,score,label").in("symbol", list.map((r: any) => r.symbol));
+        const sent = new Map((sentRows ?? []).map((s: any) => [s.symbol, s]));
+        const facts = await fetchInBatches(list, 5, async (r: any) => {
+          try {
+            const candles = mapHistorical(await fetchChart(resolveSymbolInfo(r.symbol).yahooSymbol, "3mo", "1d"));
+            const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
+            const f = computeForecast(closes, volumesOf(candles));
+            const s: any = sent.get(r.symbol);
+            const exp = ((Number(r.predicted_close) - Number(r.base_price)) / Number(r.base_price)) * 100;
+            return `${r.symbol} (${sectorOf(r.symbol)}): expected ${exp.toFixed(2)}% today, risk ${r.risk_score}/100, RSI ${f?.indicators.rsi ?? "?"}, MACD ${f ? (f.indicators.macd >= f.indicators.macdSignal ? "bullish" : "bearish") : "?"}, Bollinger pos ${f?.indicators.bbPosition ?? "?"}, news sentiment ${s ? `${s.score} (${s.label})` : "unknown"}`;
+          } catch {
+            return `${r.symbol}: data unavailable`;
+          }
+        });
+        const prompt = `You are an equity analyst. These NSE stocks were chosen for today's intraday basket by a quantitative model (positive same-day forecast, ≥50% intraday win rate, 5d/30d trend agreement, bearish-news filter, max 3 per sector). Explain in one short paragraph why this mix was chosen and the key risks for the day. Then, for each stock, give a one-sentence intraday long risk/reward note combining its technicals and news. Not investment advice. Return JSON: {"rationale":"...","stocks":[{"symbol":"...","note":"...","stance":"favourable|mixed|unfavourable"}]}\n\n${facts.filter(Boolean).join("\n")}`;
+        const out = await groqJson(prompt);
+        if (typeof out?.rationale !== "string") return null;
+        return {
+          rationale: out.rationale,
+          stocks: Array.isArray(out.stocks)
+            ? out.stocks.filter((s: any) => typeof s?.symbol === "string" && typeof s?.note === "string")
+            : [],
+        };
+      });
+      return new Response(JSON.stringify({ success: true, rationale: content?.rationale ?? null, stocks: content?.stocks ?? [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (action === "symbols") {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { CandlestickChart } from "lucide-react";
-import { useHistoricalData, useForecast, type HistoryRange } from "@/hooks/useAngelOneData";
+import { useHistoricalData, useForecast, useTechnicalNarrative, type HistoryRange } from "@/hooks/useAngelOneData";
 
 interface PredictionChartProps {
   symbol: string;
@@ -24,6 +24,7 @@ const PredictionChart = ({ symbol, onCandleView }: PredictionChartProps) => {
   const { data: histData, isLoading } = useHistoricalData(symbol, range);
   const historicalData = histData ?? [];
   const { data: forecastData } = useForecast(symbol);
+  const { data: narrative } = useTechnicalNarrative(symbol);
 
   const rangePicker = (
     <select
@@ -108,8 +109,11 @@ const PredictionChart = ({ symbol, onCandleView }: PredictionChartProps) => {
             Price History & 7-Day Forecast
           </h3>
           <p className="text-sm text-muted-foreground">
-            Market feed · Last {rangeLabel} + SES/linear-regression projection
+            Market feed · Last {rangeLabel} + Holt/volume-weighted trend with Bollinger mean-reversion
           </p>
+          {narrative && (
+            <p className="mt-1 max-w-2xl text-xs italic text-muted-foreground/90">AI read: {narrative}</p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {rangePicker}
