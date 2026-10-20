@@ -1660,6 +1660,51 @@ serve(async (req) => {
       });
     }
 
+    if (action === "trade-rationale") {
+      const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      let trades: any[] = [];
+      try { trades = JSON.parse(url.searchParams.get("trades") ?? "[]"); } catch { trades = []; }
+      const clean = (Array.isArray(trades) ? trades : [])
+        .filter((t) => t && typeof t.symbol === "string" && isValidSymbol(t.symbol))
+        .slice(0, 10)
+        .map((t) => ({
+          symbol: t.symbol,
+          price: Number(t.price) || 0,
+          gainPct: Number(t.expectedGainPct) || 0,
+          bePct: Number(t.breakevenPct) || 0,
+          net: Number(t.netPerShare) || 0,
+          shares: Math.max(0, Math.floor(Number(t.shares) || 0)),
+          profit: Number(t.projectedProfit) || 0,
+        }));
+      if (!clean.length) return json({ success: true, notes: {} });
+      const supabase = getSupabase();
+      const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+      const key = `trade:${today}:${clean.map((t) => `${t.symbol}x${t.shares}`).sort().join(",")}`;
+      const content = await cachedNarrative(supabase, key, async () => {
+        const { data: sentRows } = await supabase.from("sentiment_cache")
+          .select("symbol,score,label").in("symbol", clean.map((t) => t.symbol));
+        const sent = new Map((sentRows ?? []).map((s: any) => [s.symbol, s]));
+        const facts = await fetchInBatches(clean, 5, async (t: any) => {
+          let tech = "";
+          try {
+            const candles = mapHistorical(await fetchChart(resolveSymbolInfo(t.symbol).yahooSymbol, "3mo", "1d"));
+            const closes = candles.map((c: any[]) => Number(c[4])).filter((v) => !Number.isNaN(v));
+            const f = computeForecast(closes, volumesOf(candles));
+            if (f) tech = `, RSI ${f.indicators.rsi}, MACD ${f.indicators.macd >= f.indicators.macdSignal ? "bullish" : "bearish"}, Bollinger pos ${f.indicators.bbPosition}, trends ${f.trendsAgree ? "agree" : "disagree"}`;
+          } catch { /* technicals optional */ }
+          const s: any = sent.get(t.symbol);
+          return `${t.symbol} (${sectorOf(t.symbol)}): price ₹${t.price.toFixed(2)}, forecast gain today ${t.gainPct.toFixed(2)}%, round-trip charges ${t.bePct.toFixed(3)}%, net ₹${t.net.toFixed(2)}/share, ${t.shares} shares, projected profit ₹${t.profit.toFixed(2)}${tech}, news sentiment ${s ? `${s.score} (${s.label})` : "unknown"}`;
+        });
+        const prompt = `You explain intraday trade suggestions to a beginner investor. For each NSE stock below, write ONE or TWO short plain-language sentences (no jargon like RSI/MACD; translate them, e.g. "momentum is turning up") explaining why the model expects it to be profitable today after brokerage charges, and mention the main risk. Not investment advice. Return JSON: {"notes":[{"symbol":"...","note":"..."}]}\n\n${facts.join("\n")}`;
+        const out = await groqJson(prompt);
+        if (!Array.isArray(out?.notes)) return null;
+        const notes: Record<string, string> = {};
+        for (const n of out.notes) if (typeof n?.symbol === "string" && typeof n?.note === "string") notes[n.symbol.toUpperCase()] = n.note;
+        return Object.keys(notes).length ? { notes } : null;
+      });
+      return json({ success: true, notes: content?.notes ?? {} });
+    }
+
     if (action === "basket-rationale") {
       const session = url.searchParams.get("session") ?? "";
       const date = url.searchParams.get("date") ?? "";

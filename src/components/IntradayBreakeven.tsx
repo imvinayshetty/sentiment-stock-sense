@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDailyBasket, useBasketAccuracy } from "@/hooks/useDailyBasket";
-import { useIntradayBreakeven, type BreakevenRow } from "@/hooks/useIntradayBreakeven";
+import { useIntradayBreakeven, useTradeRationale, type BreakevenRow } from "@/hooks/useIntradayBreakeven";
 
 const inr = (v: number) =>
   `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -96,7 +96,7 @@ const PortfolioCard = ({ rows, budget, utilisation }: { rows: BreakevenRow[]; bu
   );
 };
 
-const RowCard = ({ r }: { r: BreakevenRow }) => (
+const RowCard = ({ r, note }: { r: BreakevenRow; note?: string }) => (
   <div
     className={`rounded-lg border p-3 ${
       r.profitable
@@ -157,6 +157,12 @@ const RowCard = ({ r }: { r: BreakevenRow }) => (
         {r.marginSource === "estimate" && <EstBadge />}
       </p>
     )}
+    {r.profitable && r.shares > 0 && note && (
+      <p className="mt-2 flex gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-2 text-xs text-muted-foreground">
+        <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+        <span><span className="font-semibold text-primary">Why today: </span>{note}</span>
+      </p>
+    )}
     {r.profitable && r.shares === 0 && (
       <p className="mt-2 text-xs text-chart-neutral">
         The forecast clears the charges, but one share's margin costs more than the budget left after
@@ -189,6 +195,7 @@ const IntradayBreakeven = () => {
     [basketDate],
   );
   const { data, isLoading, isFetching, error, refetch } = useIntradayBreakeven(symbols, budgetMax);
+  const { data: notes } = useTradeRationale(data?.rows ?? []);
 
   if (budgetMax == null) {
     return (
@@ -260,7 +267,7 @@ const IntradayBreakeven = () => {
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {data?.rows.map((r) => <RowCard key={r.symbol} r={r} />)}
+        {data?.rows.map((r) => <RowCard key={r.symbol} r={r} note={notes?.[r.symbol.toUpperCase()]} />)}
       </div>
     </div>
   );

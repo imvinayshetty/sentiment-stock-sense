@@ -80,3 +80,35 @@ export function useIntradayBreakeven(symbols: string[], budget: number | null, e
     retry: 1,
   });
 }
+
+/** Plain-language AI explanation per tradeable suggestion (cached per day on the server). */
+export function useTradeRationale(rows: BreakevenRow[]) {
+  const trades = rows
+    .filter((r) => r.profitable && r.shares > 0)
+    .map((r) => ({
+      symbol: r.symbol,
+      price: r.price,
+      expectedGainPct: r.expectedGainPct,
+      breakevenPct: r.breakevenPct,
+      netPerShare: r.netPerShare,
+      shares: r.shares,
+      projectedProfit: r.projectedProfit,
+    }));
+  const key = trades.map((t) => `${t.symbol}x${t.shares}`).sort().join(",");
+  return useQuery<Record<string, string>>({
+    queryKey: ["trade-rationale", key],
+    queryFn: async () => {
+      const params = new URLSearchParams({ action: "trade-rationale", trades: JSON.stringify(trades) });
+      const res = await fetch(`${PROJECT_URL}/functions/v1/angel-one-data?${params}`, {
+        headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY },
+      });
+      if (!res.ok) return {};
+      const result = await res.json();
+      return (result?.notes ?? {}) as Record<string, string>;
+    },
+    enabled: trades.length > 0,
+    staleTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 0,
+  });
+}
